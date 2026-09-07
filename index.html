@@ -673,6 +673,7 @@ const STORAGE_KEY = "electrax26-state";
 function defaultState(){
   return {
     lunch:false,
+    soundEnabled:true,
     announcements:[
       {id:1, time:"09:00 AM", text:"Welcome to ELECTRAX'26! Registration is open at the ECE block lobby."}
     ],
@@ -772,7 +773,6 @@ function restoreSession(){
   }catch(e){ return null; }
 }
 let announceSeq = 2;
-let soundEnabled = true;
 let EVENT_START = new Date("2026-09-12T09:00:00");
 let stateLoaded = false;
 
@@ -788,6 +788,7 @@ function mergeState(loaded){
   const base = defaultState();
   if(!loaded || typeof loaded !== "object") return base;
   base.lunch = typeof loaded.lunch === "boolean" ? loaded.lunch : base.lunch;
+  base.soundEnabled = typeof loaded.soundEnabled === "boolean" ? loaded.soundEnabled : base.soundEnabled;
   if(Array.isArray(loaded.announcements)) base.announcements = loaded.announcements;
   if(loaded.events){
     Object.keys(base.events).forEach(id=>{
@@ -898,7 +899,7 @@ function toast(msg){
 
 let audioCtx = null;
 function playChime(tone){
-  if(!soundEnabled) return;
+  if(!STATE.soundEnabled) return;
   try{
     audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
     const notes = tone==="lunch" ? [523.25, 392.0] : [659.25, 880.0];
@@ -918,7 +919,7 @@ function playChime(tone){
   }catch(e){ /* audio not available — fail silently */ }
 }
 function buzz(pattern){
-  if(!soundEnabled) return;
+  if(!STATE.soundEnabled) return;
   if(navigator.vibrate) navigator.vibrate(pattern || [100,50,100]);
 }
 
@@ -1212,10 +1213,10 @@ function mainAdminHTML(){
       <div class="sound-toggle-card">
         <div>
           <div class="label">Sound &amp; vibration cues</div>
-          <div class="desc">Plays a short chime (and buzzes on phones) when lunch or an event status changes — this device only.</div>
+          <div class="desc">Plays a short chime (and buzzes on phones) when lunch or an event status changes — applies to every visitor's device.</div>
         </div>
         <label class="switch">
-          <input type="checkbox" id="soundSwitch" ${soundEnabled?"checked":""}>
+          <input type="checkbox" id="soundSwitch" ${STATE.soundEnabled?"checked":""}>
           <span class="track"></span>
         </label>
       </div>
@@ -1295,9 +1296,10 @@ function wireMainAdmin(){
     renderAdmin();
   });
 
-  document.getElementById("soundSwitch").addEventListener("change", (e)=>{
-    soundEnabled = e.target.checked;
-    toast(soundEnabled ? "Sound & vibration cues on" : "Sound & vibration cues off");
+  document.getElementById("soundSwitch").addEventListener("change", async (e)=>{
+    STATE.soundEnabled = e.target.checked;
+    await saveState();
+    toast(STATE.soundEnabled ? "Sound & vibration cues on for everyone" : "Sound & vibration cues off for everyone");
   });
 
   document.getElementById("postAnnounceBtn").addEventListener("click", async ()=>{
