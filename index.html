@@ -289,6 +289,7 @@ header.topbar{
 
 /* ---------- winner / feedback / photos (public) ---------- */
 .post-event{margin-top:14px; padding-top:14px; border-top:1px dashed var(--line); display:flex; flex-direction:column; gap:10px;}
+.winners-list{display:flex; flex-direction:column; gap:6px;}
 .winner-banner{
   display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--gold);
   background:rgba(231,178,76,.08); border:1px solid rgba(231,178,76,.25);
@@ -302,6 +303,15 @@ header.topbar{
   padding:6px 12px; border-radius:999px; text-decoration:none; display:inline-flex; align-items:center; gap:6px;
 }
 .feedback-btn:hover{background:rgba(92,200,232,.1);}
+
+/* ---------- round status (public + admin) ---------- */
+.round-status-row{display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;}
+.round-pill{
+  font-size:10.5px; letter-spacing:.02em; padding:4px 10px; border-radius:999px;
+  border:1px solid transparent; white-space:nowrap; font-weight:600;
+  display:inline-flex; align-items:center; gap:5px;
+}
+.round-pill .dot{width:5px; height:5px; border-radius:50%;}
 
 /* ---------- admin: counters & photo add ---------- */
 .counter-row{display:flex; align-items:center; gap:14px;}
@@ -425,6 +435,14 @@ footer{border-top:1px solid var(--line); padding:28px 24px; text-align:center; c
 .status-choice button.active.st-ongoing{background:rgba(92,200,232,.15); color:var(--spark); border-color:var(--spark);}
 .status-choice button.active.st-completed{background:rgba(111,181,102,.15); color:var(--ok); border-color:var(--ok);}
 .status-choice button.active.st-delayed{background:rgba(209,85,63,.15); color:var(--danger); border-color:var(--danger);}
+.status-choice.mini button{padding:5px 10px; font-size:11px;}
+.rounds-block{border:1px dashed var(--line); border-radius:var(--radius); padding:14px; margin-top:6px;}
+.rounds-block .round-row{margin-bottom:12px;}
+.rounds-block .round-row:last-child{margin-bottom:0;}
+.rounds-block .round-row label{display:block; font-size:11px; color:var(--ink-dim); margin-bottom:6px;}
+.rounds-toggle-row{display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:4px;}
+.rounds-toggle-row .label{font-size:13px; font-weight:600;}
+.rounds-toggle-row .desc{font-size:11.5px; color:var(--ink-faint); margin-top:2px;}
 
 .credential-table{width:100%; border-collapse:collapse; font-size:12.5px;}
 .credential-table th, .credential-table td{text-align:left; padding:9px 10px; border-bottom:1px solid var(--line); color:var(--ink-dim);}
@@ -665,7 +683,8 @@ function defaultState(){
         status:"not-started", venue:"Seminar Hall", room:"S-104",
         startTime:"2026-09-12T09:00",
         coordinator:{name:"", phone:""}, icon:"mic",
-        checkedIn:0, winner:"", photos:[], feedbackUrl:""
+        checkedIn:0, winnerCount:3, winners:["","",""], photos:[], feedbackUrl:"",
+        rounds:{enabled:false, round1:{label:"Round 1", status:"not-started"}, round2:{label:"Round 2", status:"not-started"}}
       },
       circuitry:{
         id:"circuitry", category:"technical", name:"Circuitry Optimization & Debugging",
@@ -673,7 +692,8 @@ function defaultState(){
         status:"not-started", venue:"ECE Hardware Lab", room:"E-201",
         startTime:"2026-09-12T10:30",
         coordinator:{name:"", phone:""}, icon:"chip",
-        checkedIn:0, winner:"", photos:[], feedbackUrl:""
+        checkedIn:0, winnerCount:2, winners:["",""], photos:[], feedbackUrl:"",
+        rounds:{enabled:false, round1:{label:"Round 1", status:"not-started"}, round2:{label:"Round 2", status:"not-started"}}
       },
       quiz:{
         id:"quiz", category:"technical", name:"Tech Quiz",
@@ -681,7 +701,8 @@ function defaultState(){
         status:"not-started", venue:"ECE Seminar Hall", room:"E-105",
         startTime:"2026-09-12T09:30",
         coordinator:{name:"", phone:""}, icon:"quiz",
-        checkedIn:0, winner:"", photos:[], feedbackUrl:""
+        checkedIn:0, winnerCount:2, winners:["",""], photos:[], feedbackUrl:"",
+        rounds:{enabled:false, round1:{label:"Round 1", status:"not-started"}, round2:{label:"Round 2", status:"not-started"}}
       },
       clues:{
         id:"clues", category:"non-technical", name:"Iconic Clues",
@@ -689,7 +710,8 @@ function defaultState(){
         status:"not-started", venue:"Main Block Corridor", room:"MB-Ground Floor",
         startTime:"2026-09-12T11:00",
         coordinator:{name:"", phone:""}, icon:"clue",
-        checkedIn:0, winner:"", photos:[], feedbackUrl:""
+        checkedIn:0, winnerCount:2, winners:["",""], photos:[], feedbackUrl:"",
+        rounds:{enabled:false, round1:{label:"Round 1", status:"not-started"}, round2:{label:"Round 2", status:"not-started"}}
       },
       freefire:{
         id:"freefire", category:"non-technical", name:"Free Fire",
@@ -697,7 +719,8 @@ function defaultState(){
         status:"not-started", venue:"IT Lab", room:"IT-02",
         startTime:"2026-09-12T13:00",
         coordinator:{name:"", phone:""}, icon:"game",
-        checkedIn:0, winner:"", photos:[], feedbackUrl:""
+        checkedIn:0, winnerCount:2, winners:["",""], photos:[], feedbackUrl:"",
+        rounds:{enabled:false, round1:{label:"Round 1", status:"not-started"}, round2:{label:"Round 2", status:"not-started"}}
       },
       shortfilm:{
         id:"shortfilm", category:"non-technical", name:"Short Film — Narrative Concepts",
@@ -705,7 +728,8 @@ function defaultState(){
         status:"not-started", venue:"Mini Auditorium", room:"MA-01",
         startTime:"2026-09-12T14:30",
         coordinator:{name:"", phone:""}, icon:"film",
-        checkedIn:0, winner:"", photos:[], feedbackUrl:""
+        checkedIn:0, winnerCount:2, winners:["",""], photos:[], feedbackUrl:"",
+        rounds:{enabled:false, round1:{label:"Round 1", status:"not-started"}, round2:{label:"Round 2", status:"not-started"}}
       }
     },
     admins:{
@@ -767,7 +791,33 @@ function mergeState(loaded){
   if(Array.isArray(loaded.announcements)) base.announcements = loaded.announcements;
   if(loaded.events){
     Object.keys(base.events).forEach(id=>{
-      if(loaded.events[id]) base.events[id] = Object.assign({}, base.events[id], loaded.events[id]);
+      const loadedEv = loaded.events[id];
+      const defEv = base.events[id];
+      if(!loadedEv) return;
+      const mergedEv = Object.assign({}, defEv, loadedEv);
+
+      /* winners: keep the canonical slot count per event, migrate legacy
+         single "winner" string into the first slot if present */
+      mergedEv.winnerCount = defEv.winnerCount;
+      if(Array.isArray(loadedEv.winners)){
+        mergedEv.winners = defEv.winners.map((_, i)=> typeof loadedEv.winners[i]==="string" ? loadedEv.winners[i] : "");
+      } else {
+        mergedEv.winners = defEv.winners.slice();
+        if(typeof loadedEv.winner === "string" && loadedEv.winner.trim()){
+          mergedEv.winners[0] = loadedEv.winner;
+        }
+      }
+      delete mergedEv.winner;
+
+      /* rounds: deep-merge so partial saves don't lose round labels/status */
+      const loadedRounds = loadedEv.rounds || {};
+      mergedEv.rounds = {
+        enabled: typeof loadedRounds.enabled === "boolean" ? loadedRounds.enabled : defEv.rounds.enabled,
+        round1: Object.assign({}, defEv.rounds.round1, loadedRounds.round1),
+        round2: Object.assign({}, defEv.rounds.round2, loadedRounds.round2)
+      };
+
+      base.events[id] = mergedEv;
     });
   }
   if(loaded.admins){
@@ -835,6 +885,7 @@ const WHATSAPP_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"
 const CALL_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3.1-8.7A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.7a2 2 0 0 1-.4 2.1L8 9.9a16 16 0 0 0 6 6l1.4-1.4a2 2 0 0 1 2.1-.4c.9.3 1.8.5 2.7.6a2 2 0 0 1 1.8 2.2z"/></svg>';
 
 const LABELS = {"not-started":"Not started","ongoing":"Ongoing","completed":"Completed","delayed":"Delayed"};
+const PLACE_EMOJI = {1:"🥇",2:"🥈",3:"🥉"};
 
 function toast(msg){
   const wrap = document.getElementById("toast-wrap");
@@ -919,11 +970,23 @@ function eventScheduleHTML(ev){
   `;
 }
 
+function roundStatusHTML(ev){
+  if(!ev.rounds || !ev.rounds.enabled) return "";
+  const r1 = ev.rounds.round1, r2 = ev.rounds.round2;
+  return `
+    <div class="round-status-row">
+      <span class="round-pill status-${r1.status}"><span class="dot"></span>${r1.label||"Round 1"}: ${LABELS[r1.status]}</span>
+      <span class="round-pill status-${r2.status}"><span class="dot"></span>${r2.label||"Round 2"}: ${LABELS[r2.status]}</span>
+    </div>
+  `;
+}
+
 function eventCardHTML(ev){
   const hasCoord = ev.coordinator.name && ev.coordinator.name.trim().length>0;
   const isCompleted = ev.status==="completed";
-  const hasWinner = isCompleted && ev.winner && ev.winner.trim().length>0;
-  const hasPhotos = isCompleted && ev.photos && ev.photos.length>0;
+  const winnerEntries = (ev.winners||[]).map((w,i)=>({w, place:i+1})).filter(x=>x.w && x.w.trim().length>0);
+  const hasWinner = winnerEntries.length>0;
+  const hasPhotos = ev.photos && ev.photos.length>0;
   const hasFeedback = isCompleted && ev.feedbackUrl && ev.feedbackUrl.trim().length>0;
   return `
     <div class="event-card" data-event="${ev.id}">
@@ -936,6 +999,7 @@ function eventCardHTML(ev){
         ${ICONS[ev.icon]}
         <span class="status-pill status-${ev.status}"><span class="dot"></span>${LABELS[ev.status]}</span>
       </div>
+      ${roundStatusHTML(ev)}
       <h3 class="event-name">${ev.name}</h3>
       <p class="event-blurb">${ev.blurb}</p>
       ${eventScheduleHTML(ev)}
@@ -954,7 +1018,7 @@ function eventCardHTML(ev){
       </div>
       ${(hasWinner || hasPhotos || hasFeedback) ? `
         <div class="post-event">
-          ${hasWinner ? `<div class="winner-banner">🏆 <span>${ev.winner}</span></div>` : ``}
+          ${hasWinner ? `<div class="winners-list">${winnerEntries.map(x=>`<div class="winner-banner">${PLACE_EMOJI[x.place]||'🏆'} <span>${x.w}</span></div>`).join("")}</div>` : ``}
           ${hasPhotos ? `<div class="photo-strip">${ev.photos.map(p=>`<a href="${p}" target="_blank" rel="noopener"><img src="${p}" alt="Event photo" loading="lazy"></a>`).join("")}</div>` : ``}
           ${hasFeedback ? `<a class="feedback-btn" href="${ev.feedbackUrl}" target="_blank" rel="noopener">📝 Leave feedback</a>` : ``}
         </div>
@@ -1317,15 +1381,17 @@ function photoThumbsHTML(ev){
 }
 
 function adminEventCardHTML(ev, compact){
+  const winnerPlaceLabel = i => (["1st","2nd","3rd"][i] || (i+1)+"th") + " place";
+  const statusButtons = (groupStatus)=>["not-started","ongoing","completed","delayed"].map(s=>`
+    <button type="button" data-status="${s}" class="st-${s} ${groupStatus===s?'active':''}">${LABELS[s]}</button>
+  `).join("");
   return `
     <div class="admin-event-card" data-event="${ev.id}">
       <h4>${ev.name} <span class="cat-tag">${ev.category==="technical"?"Technical":"Non-technical"}</span></h4>
       <div class="field">
         <label>Status</label>
         <div class="status-choice" data-role="status">
-          ${["not-started","ongoing","completed","delayed"].map(s=>`
-            <button type="button" data-status="${s}" class="st-${s} ${ev.status===s?'active':''}">${LABELS[s]}</button>
-          `).join("")}
+          ${statusButtons(ev.status)}
         </div>
       </div>
       <div class="grid-2">
@@ -1350,12 +1416,44 @@ function adminEventCardHTML(ev, compact){
           <input type="text" data-role="coordPhone" value="${ev.coordinator.phone}" placeholder="10-digit number">
         </div>
         <div class="field">
-          <label>Winner / result</label>
-          <input type="text" data-role="winner" value="${ev.winner}" placeholder="e.g. Team Firewall — 1st place">
-        </div>
-        <div class="field">
           <label>Feedback form link (optional)</label>
           <input type="text" data-role="feedback" value="${ev.feedbackUrl}" placeholder="https://forms.gle/...">
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Winners</label>
+        ${ev.winners.map((w,i)=>`
+          <input type="text" data-role="winner" data-idx="${i}" value="${w}" placeholder="${winnerPlaceLabel(i)} — e.g. Team Firewall" style="margin-bottom:8px;">
+        `).join("")}
+      </div>
+
+      <div class="field">
+        <div class="rounds-toggle-row">
+          <div>
+            <div class="label">Multi-round event</div>
+            <div class="desc">Track two rounds separately — each gets its own status badge on the public page, so you can mark Round 1 done while Round 2 is still running.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" data-role="roundsEnabled" ${ev.rounds.enabled?"checked":""}>
+            <span class="track"></span>
+          </label>
+        </div>
+        <div class="rounds-block" data-role="roundsBlock" style="${ev.rounds.enabled?"":"display:none;"}">
+          <div class="round-row">
+            <label>Round 1 label</label>
+            <input type="text" data-role="round1Label" value="${ev.rounds.round1.label}" style="margin-bottom:8px;">
+            <div class="status-choice mini" data-role="round1Status">
+              ${statusButtons(ev.rounds.round1.status)}
+            </div>
+          </div>
+          <div class="round-row">
+            <label>Round 2 label</label>
+            <input type="text" data-role="round2Label" value="${ev.rounds.round2.label}" style="margin-bottom:8px;">
+            <div class="status-choice mini" data-role="round2Status">
+              ${statusButtons(ev.rounds.round2.status)}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1369,7 +1467,7 @@ function adminEventCardHTML(ev, compact){
       </div>
 
       <div class="field">
-        <label>Event photos (shown once marked Completed)</label>
+        <label>Event photos (visible to visitors right away, at any status)</label>
         <div class="file-upload-row">
           <label class="file-upload-label">
             📷 Upload photos
@@ -1424,6 +1522,25 @@ function wireEventCard(eventId, fromMain){
     });
   });
 
+  ["round1Status","round2Status"].forEach(role=>{
+    const group = scope.querySelector(`[data-role="${role}"]`);
+    if(!group) return;
+    group.querySelectorAll("button").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        group.querySelectorAll("button").forEach(b=>b.classList.remove("active"));
+        btn.classList.add("active");
+      });
+    });
+  });
+
+  const roundsToggle = scope.querySelector('[data-role="roundsEnabled"]');
+  const roundsBlock = scope.querySelector('[data-role="roundsBlock"]');
+  if(roundsToggle && roundsBlock){
+    roundsToggle.addEventListener("change", ()=>{
+      roundsBlock.style.display = roundsToggle.checked ? "" : "none";
+    });
+  }
+
   const countEl = scope.querySelector('[data-role="countVal"]');
   scope.querySelector('[data-role="dec"]').addEventListener("click", ()=>{
     ev.checkedIn = Math.max(0, ev.checkedIn - 1);
@@ -1473,8 +1590,19 @@ function wireEventCard(eventId, fromMain){
     ev.room = scope.querySelector('[data-role="room"]').value.trim() || ev.room;
     ev.coordinator.name = scope.querySelector('[data-role="coordName"]').value.trim();
     ev.coordinator.phone = scope.querySelector('[data-role="coordPhone"]').value.trim();
-    ev.winner = scope.querySelector('[data-role="winner"]').value.trim();
+    ev.winners = Array.from(scope.querySelectorAll('[data-role="winner"]')).map(inp=>inp.value.trim());
     ev.feedbackUrl = scope.querySelector('[data-role="feedback"]').value.trim();
+
+    const roundsEnabledInput = scope.querySelector('[data-role="roundsEnabled"]');
+    ev.rounds.enabled = roundsEnabledInput ? roundsEnabledInput.checked : ev.rounds.enabled;
+    const r1LabelInput = scope.querySelector('[data-role="round1Label"]');
+    const r2LabelInput = scope.querySelector('[data-role="round2Label"]');
+    if(r1LabelInput) ev.rounds.round1.label = r1LabelInput.value.trim() || "Round 1";
+    if(r2LabelInput) ev.rounds.round2.label = r2LabelInput.value.trim() || "Round 2";
+    const r1Active = scope.querySelector('[data-role="round1Status"] button.active');
+    const r2Active = scope.querySelector('[data-role="round2Status"] button.active');
+    if(r1Active) ev.rounds.round1.status = r1Active.dataset.status;
+    if(r2Active) ev.rounds.round2.status = r2Active.dataset.status;
     EVENT_START = computeEventStart();
     if(statusChanged){
       playChime("status");
