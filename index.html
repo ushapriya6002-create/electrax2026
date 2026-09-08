@@ -444,6 +444,22 @@ footer{border-top:1px solid var(--line); padding:28px 24px; text-align:center; c
 .rounds-toggle-row .label{font-size:13px; font-weight:600;}
 .rounds-toggle-row .desc{font-size:11.5px; color:var(--ink-faint); margin-top:2px;}
 
+/* ---------- participants / QR check-in ---------- */
+.event-checklist{display:flex; flex-direction:column; gap:8px; border:1px solid var(--line); border-radius:var(--radius); padding:10px 12px; max-height:220px; overflow-y:auto;}
+.event-check-item{display:flex; align-items:center; gap:9px; font-size:13px; cursor:pointer;}
+.event-check-item input{width:16px; height:16px; accent-color:var(--ember); cursor:pointer;}
+.participant-table{width:100%; border-collapse:collapse; font-size:12.5px; margin-top:10px;}
+.participant-table th{text-align:left; padding:8px 10px; color:var(--ink-faint); font-weight:600; border-bottom:1px solid var(--line); white-space:nowrap;}
+.participant-table td{padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top;}
+.participant-table .pid{font-family:monospace; font-size:11.5px; color:var(--ink-dim);}
+.event-chip-row{display:flex; flex-wrap:wrap; gap:5px;}
+.event-chip{font-size:10px; padding:3px 8px; border-radius:999px; white-space:nowrap; border:1px solid transparent;}
+.event-chip.checked{background:rgba(111,181,102,.12); color:var(--ok); border-color:rgba(111,181,102,.3);}
+.event-chip.pending{background:rgba(132,122,104,.1); color:var(--ink-faint);}
+.scan-qr-btn{margin-top:8px;}
+.qr-btn-mini{font-size:11px; padding:5px 10px; border-radius:999px; border:1px solid var(--line); background:none; color:var(--ink-dim); cursor:pointer;}
+.qr-btn-mini:hover{border-color:var(--ember); color:var(--ember);}
+
 .credential-table{width:100%; border-collapse:collapse; font-size:12.5px;}
 .credential-table th, .credential-table td{text-align:left; padding:9px 10px; border-bottom:1px solid var(--line); color:var(--ink-dim);}
 .credential-table th{color:var(--ink-faint); font-weight:500; font-size:11px; text-transform:uppercase; letter-spacing:.04em;}
@@ -644,7 +660,41 @@ footer{border-top:1px solid var(--line); padding:28px 24px; text-align:center; c
   </div>
 </div>
 
+<!-- ===================== SCAN QR MODAL ===================== -->
+<div class="modal-backdrop" id="scanModal">
+  <div class="modal">
+    <button class="modal-close" id="closeScanModal" aria-label="Close">&times;</button>
+    <h3 id="scanModalTitle">Check in — scan QR</h3>
+    <p class="sub">Point the camera at the participant's QR code, or type their ID manually below.</p>
+    <div id="qrReaderRegion" style="width:100%; border-radius:var(--radius); overflow:hidden; margin-bottom:12px;"></div>
+    <div class="field">
+      <label for="manualScanId">Participant ID (manual entry)</label>
+      <div class="btn-row">
+        <input type="text" id="manualScanId" placeholder="e.g. EX7K3F9A" style="flex:1;">
+        <button class="btn secondary" id="manualScanBtn">Check in</button>
+      </div>
+    </div>
+    <p class="modal-error" id="scanResultMsg" style="display:none;"></p>
+  </div>
+</div>
+
+<!-- ===================== VIEW / PRINT QR MODAL ===================== -->
+<div class="modal-backdrop" id="qrViewModal">
+  <div class="modal" style="text-align:center;">
+    <button class="modal-close" id="closeQrViewModal" aria-label="Close">&times;</button>
+    <h3 id="qrViewName">Participant</h3>
+    <p class="sub" id="qrViewEvents"></p>
+    <canvas id="qrViewCanvas" style="margin:10px auto; display:block;"></canvas>
+    <p class="sub" id="qrViewId" style="font-family:monospace; letter-spacing:.05em;"></p>
+    <div class="btn-row">
+      <button class="btn" id="qrDownloadBtn" style="flex:1;">Download QR</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 /* =========================================================
    STATE — persisted in Supabase (shared across every visitor/
@@ -743,7 +793,8 @@ function defaultState(){
         freefire:{username:"freefire", password:"ece2026"},
         shortfilm:{username:"shortfilm", password:"ece2026"}
       }
-    }
+    },
+    participants:{}
   };
 }
 
@@ -829,6 +880,7 @@ function mergeState(loaded){
       });
     }
   }
+  base.participants = (loaded.participants && typeof loaded.participants === "object") ? loaded.participants : {};
   return base;
 }
 
@@ -1162,6 +1214,189 @@ async function attemptLogin(){
   document.getElementById("loginError").style.display="block";
 }
 
+/* ---------- participants: id generation, table, QR view, scanning ---------- */
+function generateParticipantId(){
+  let id;
+  do{
+    id = "EX" + Math.random().toString(36).slice(2,8).toUpperCase();
+  } while(STATE.participants[id]);
+  return id;
+}
+
+function renderParticipantTable(filter){
+  const wrap = document.getElementById("participantTableWrap");
+  if(!wrap) return;
+  const list = Object.values(STATE.participants).sort((a,b)=> new Date(b.registeredAt) - new Date(a.registeredAt));
+  const filtered = filter ? list.filter(p=>
+    p.name.toLowerCase().includes(filter) || p.phone.toLowerCase().includes(filter) || p.id.toLowerCase().includes(filter)
+  ) : list;
+  if(filtered.length===0){
+    wrap.innerHTML = '<p class="announce-empty">No participants registered yet.</p>';
+    return;
+  }
+  wrap.innerHTML = `
+    <table class="participant-table">
+      <thead><tr><th>Name</th><th>Phone</th><th>ID</th><th>Events</th><th></th></tr></thead>
+      <tbody>
+        ${filtered.map(p=>`
+          <tr>
+            <td>${p.name}</td>
+            <td>${p.phone}</td>
+            <td class="pid">${p.id}</td>
+            <td>
+              <div class="event-chip-row">
+                ${p.events.map(eid=>`
+                  <span class="event-chip ${p.checkins[eid] ? 'checked' : 'pending'}">${STATE.events[eid] ? STATE.events[eid].name : eid}${p.checkins[eid] ? ' ✓' : ''}</span>
+                `).join("")}
+              </div>
+            </td>
+            <td><button type="button" class="qr-btn-mini" data-view-qr="${p.id}">View QR</button></td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+  wrap.querySelectorAll("[data-view-qr]").forEach(btn=>{
+    btn.addEventListener("click", ()=>openQRView(btn.dataset.viewQr));
+  });
+}
+
+const qrViewModal = document.getElementById("qrViewModal");
+function openQRView(participantId){
+  const p = STATE.participants[participantId];
+  if(!p) return;
+  document.getElementById("qrViewName").textContent = p.name;
+  document.getElementById("qrViewEvents").textContent = p.events.map(eid=>STATE.events[eid]?STATE.events[eid].name:eid).join(", ");
+  document.getElementById("qrViewId").textContent = p.id;
+  const canvas = document.getElementById("qrViewCanvas");
+  if(typeof QRCode !== "undefined"){
+    QRCode.toCanvas(canvas, p.id, {width:220, margin:1}, (err)=>{ if(err) console.error(err); });
+  }
+  qrViewModal.classList.add("show");
+}
+document.getElementById("closeQrViewModal").addEventListener("click", ()=>qrViewModal.classList.remove("show"));
+qrViewModal.addEventListener("click", (e)=>{ if(e.target===qrViewModal) qrViewModal.classList.remove("show"); });
+document.getElementById("qrDownloadBtn").addEventListener("click", ()=>{
+  const canvas = document.getElementById("qrViewCanvas");
+  const link = document.createElement("a");
+  link.download = (document.getElementById("qrViewId").textContent || "participant") + "-qr.png";
+  link.href = canvas.toDataURL("image/png");
+  link.click();
+});
+
+let html5QrScanner = null;
+let activeScanEventId = null;
+let scanMode = "checkin"; // "checkin" | "register"
+const scanModal = document.getElementById("scanModal");
+
+function openScanModal(eventId){
+  scanMode = "checkin";
+  activeScanEventId = eventId;
+  document.getElementById("scanModalTitle").textContent = "Check in — " + STATE.events[eventId].name;
+  const msg = document.getElementById("scanResultMsg");
+  msg.style.display = "none";
+  document.getElementById("manualScanId").value = "";
+  scanModal.classList.add("show");
+  startScanner();
+}
+function openScanModalForRegistration(){
+  scanMode = "register";
+  activeScanEventId = null;
+  document.getElementById("scanModalTitle").textContent = "Scan the participant's QR code";
+  const msg = document.getElementById("scanResultMsg");
+  msg.style.display = "none";
+  document.getElementById("manualScanId").value = "";
+  scanModal.classList.add("show");
+  startScanner();
+}
+function closeScanModal(){
+  scanModal.classList.remove("show");
+  stopScanner();
+  activeScanEventId = null;
+}
+document.getElementById("closeScanModal").addEventListener("click", closeScanModal);
+scanModal.addEventListener("click", (e)=>{ if(e.target===scanModal) closeScanModal(); });
+
+function startScanner(){
+  if(typeof Html5Qrcode === "undefined") return;
+  html5QrScanner = new Html5Qrcode("qrReaderRegion");
+  html5QrScanner.start(
+    {facingMode:"environment"},
+    {fps:10, qrbox:220},
+    (decodedText)=>{ handleScan(decodedText.trim()); },
+    ()=>{}
+  ).catch(()=>{
+    const msg = document.getElementById("scanResultMsg");
+    msg.style.display = "block";
+    msg.textContent = "Couldn't access the camera — use manual ID entry below instead.";
+  });
+}
+function stopScanner(){
+  if(html5QrScanner){
+    const s = html5QrScanner;
+    html5QrScanner = null;
+    s.stop().then(()=>s.clear()).catch(()=>{});
+  }
+}
+
+function handleScan(value){
+  if(scanMode === "register"){
+    fillRegistrationId(value);
+  } else if(activeScanEventId){
+    checkInParticipant(value, activeScanEventId);
+  }
+}
+
+function fillRegistrationId(value){
+  closeScanModal();
+  const idField = document.getElementById("regParticipantId");
+  if(idField) idField.value = value;
+  const existing = STATE.participants[value];
+  toast(existing ? `Note: this QR is already registered to ${existing.name}` : "QR scanned — now fill in their details below");
+}
+
+document.getElementById("manualScanBtn").addEventListener("click", ()=>{
+  const id = document.getElementById("manualScanId").value.trim();
+  if(!id) return;
+  handleScan(id);
+});
+document.getElementById("manualScanId").addEventListener("keydown", (e)=>{
+  if(e.key==="Enter") document.getElementById("manualScanBtn").click();
+});
+
+async function checkInParticipant(participantId, eventId){
+  const msg = document.getElementById("scanResultMsg");
+  msg.style.display = "block";
+  const p = STATE.participants[participantId];
+  if(!p){
+    msg.textContent = "❌ No participant found with that ID.";
+    buzz([200]);
+    return;
+  }
+  if(!p.events.includes(eventId)){
+    msg.textContent = `❌ ${p.name} is not registered for this event.`;
+    buzz([200]);
+    return;
+  }
+  if(p.checkins[eventId]){
+    msg.textContent = `⚠️ ${p.name} is already checked in.`;
+    return;
+  }
+  p.checkins[eventId] = true;
+  STATE.events[eventId].checkedIn = (STATE.events[eventId].checkedIn || 0) + 1;
+  await saveState();
+  msg.textContent = `✅ ${p.name} checked in!`;
+  playChime("status");
+  buzz([80]);
+  document.getElementById("manualScanId").value = "";
+  if(session && session.type==="main"){
+    renderAdminEventList();
+    renderParticipantTable(document.getElementById("participantSearch") ? document.getElementById("participantSearch").value.trim().toLowerCase() : "");
+  } else {
+    renderAdmin();
+  }
+}
+
 /* ---------- admin view ---------- */
 function enterAdmin(){
   document.getElementById("view-public").style.display="none";
@@ -1237,6 +1472,53 @@ function mainAdminHTML(){
         <button class="btn" id="postAnnounceBtn">Post</button>
       </div>
       <div id="adminAnnounceList"></div>
+    </div>
+
+    <div class="admin-section">
+      <h3>Participant registration &amp; check-in</h3>
+      <p class="sub">Register a participant at the desk, hand them their QR code — event coordinators scan it to check them in at each event they registered for. Every participant's full record is visible here.</p>
+      <div class="admin-event-card">
+        <h4>Register a new participant</h4>
+        <div class="field">
+          <label for="regParticipantId">Participant ID — scan their QR code</label>
+          <div class="btn-row">
+            <input type="text" id="regParticipantId" placeholder="Scan their QR, or type the code manually" style="flex:1; font-family:monospace;">
+            <button type="button" class="btn secondary" id="regScanBtn">📷 Scan QR</button>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="field">
+            <label for="regName">Full name</label>
+            <input type="text" id="regName" placeholder="Participant's name">
+          </div>
+          <div class="field">
+            <label for="regPhone">Phone number</label>
+            <input type="text" id="regPhone" placeholder="10-digit number">
+          </div>
+        </div>
+        <div class="field">
+          <label>Events (choose up to 3)</label>
+          <div class="event-checklist" id="regEventChecklist">
+            ${Object.values(STATE.events).map(ev=>`
+              <label class="event-check-item">
+                <input type="checkbox" value="${ev.id}" data-role="regEventCheck">
+                <span>${ev.name}</span>
+              </label>
+            `).join("")}
+          </div>
+        </div>
+        <button class="btn" id="registerBtn">Register participant</button>
+        <p class="cred-row-msg" id="regMsg">Registered.</p>
+      </div>
+
+      <div class="admin-event-card">
+        <h4>All registered participants</h4>
+        <div class="field">
+          <label for="participantSearch">Search by name, phone or ID</label>
+          <input type="text" id="participantSearch" placeholder="Start typing...">
+        </div>
+        <div id="participantTableWrap"></div>
+      </div>
     </div>
 
     <div class="admin-section">
@@ -1342,6 +1624,63 @@ function wireMainAdmin(){
     });
   });
 
+  const regChecklist = document.getElementById("regEventChecklist");
+  if(regChecklist){
+    regChecklist.querySelectorAll('[data-role="regEventCheck"]').forEach(cb=>{
+      cb.addEventListener("change", ()=>{
+        const checked = regChecklist.querySelectorAll('[data-role="regEventCheck"]:checked');
+        if(checked.length > 3){
+          cb.checked = false;
+          toast("Participants can register for up to 3 events only");
+        }
+      });
+    });
+  }
+
+  const regScanBtn = document.getElementById("regScanBtn");
+  if(regScanBtn){
+    regScanBtn.addEventListener("click", openScanModalForRegistration);
+  }
+
+  const registerBtn = document.getElementById("registerBtn");
+  if(registerBtn){
+    registerBtn.addEventListener("click", async ()=>{
+      const id = document.getElementById("regParticipantId").value.trim();
+      const name = document.getElementById("regName").value.trim();
+      const phone = document.getElementById("regPhone").value.trim();
+      const selectedEvents = Array.from(document.querySelectorAll('[data-role="regEventCheck"]:checked')).map(cb=>cb.value);
+      if(!id){ toast("Scan or enter the participant's QR code/ID first"); return; }
+      if(!name || !phone){ toast("Name and phone are required"); return; }
+      if(selectedEvents.length===0){ toast("Select at least one event"); return; }
+      if(selectedEvents.length>3){ toast("Maximum 3 events per participant"); return; }
+      if(STATE.participants[id]){
+        toast(`That code is already registered to ${STATE.participants[id].name} — check the table below to edit it`);
+        return;
+      }
+      const checkins = {};
+      selectedEvents.forEach(eid=>{ checkins[eid]=false; });
+      STATE.participants[id] = { id, name, phone, events:selectedEvents, checkins, registeredAt:new Date().toISOString() };
+      await saveState();
+      document.getElementById("regParticipantId").value = "";
+      document.getElementById("regName").value = "";
+      document.getElementById("regPhone").value = "";
+      document.querySelectorAll('[data-role="regEventCheck"]').forEach(cb=>cb.checked=false);
+      const msg = document.getElementById("regMsg");
+      msg.classList.add("show");
+      setTimeout(()=>msg.classList.remove("show"), 2400);
+      toast(name + " registered");
+      renderParticipantTable();
+    });
+  }
+
+  const searchInput = document.getElementById("participantSearch");
+  if(searchInput){
+    searchInput.addEventListener("input", ()=>{
+      renderParticipantTable(searchInput.value.trim().toLowerCase());
+    });
+  }
+
+  renderParticipantTable();
   renderAdminAnnounceList();
   renderAdminEventList();
 }
@@ -1466,6 +1805,7 @@ function adminEventCardHTML(ev, compact){
           <span class="counter-value" data-role="countVal">${ev.checkedIn}</span>
           <button type="button" class="counter-btn" data-role="inc">+</button>
         </div>
+        <button type="button" class="btn secondary scan-qr-btn" data-role="openScan">📷 Scan QR — check in a participant</button>
       </div>
 
       <div class="field">
@@ -1541,6 +1881,11 @@ function wireEventCard(eventId, fromMain){
     roundsToggle.addEventListener("change", ()=>{
       roundsBlock.style.display = roundsToggle.checked ? "" : "none";
     });
+  }
+
+  const scanBtn = scope.querySelector('[data-role="openScan"]');
+  if(scanBtn){
+    scanBtn.addEventListener("click", ()=>openScanModal(eventId));
   }
 
   const countEl = scope.querySelector('[data-role="countVal"]');
