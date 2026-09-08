@@ -498,6 +498,13 @@ footer{border-top:1px solid var(--line); padding:28px 24px; text-align:center; c
 .cred-row-msg.show{display:block;}
 .main-admin-account .grid-2{margin-bottom:14px;}
 
+/* ---------- scan-to-confirm check-in card ---------- */
+.scan-candidate-card{display:none; margin-top:14px; padding:14px; border:1px solid var(--line); border-radius:var(--radius); background:rgba(111,181,102,.06);}
+.scan-candidate-card.show{display:block;}
+.scan-candidate-row{display:flex; justify-content:space-between; gap:10px; font-size:12.5px; padding:4px 0; border-bottom:1px dashed var(--line);}
+.scan-candidate-row:last-of-type{border-bottom:none;}
+.scan-candidate-row .label{color:var(--ink-faint);}
+
 /* ---------- app loading / sync state ---------- */
 #appLoading{
   position:fixed; inset:0; z-index:500; background:var(--bg);
@@ -644,7 +651,7 @@ footer{border-top:1px solid var(--line); padding:28px 24px; text-align:center; c
   <div class="modal">
     <button class="modal-close" id="closeModal" aria-label="Close">&times;</button>
     <h3>Staff sign in</h3>
-    <p class="sub">Main organiser or event coordinator access.</p>
+    <p class="sub">Main organiser, registration desk, or event coordinator access.</p>
     <div class="field">
       <label for="loginUser">Username</label>
       <input type="text" id="loginUser" autocomplete="off">
@@ -671,10 +678,20 @@ footer{border-top:1px solid var(--line); padding:28px 24px; text-align:center; c
       <label for="manualScanId">Participant ID (manual entry)</label>
       <div class="btn-row">
         <input type="text" id="manualScanId" placeholder="e.g. EX7K3F9A" style="flex:1;">
-        <button class="btn secondary" id="manualScanBtn">Check in</button>
+        <button class="btn secondary" id="manualScanBtn">Look up</button>
       </div>
     </div>
     <p class="modal-error" id="scanResultMsg" style="display:none;"></p>
+    <div class="scan-candidate-card" id="scanCandidateCard">
+      <div class="scan-candidate-row"><span class="label">Name</span><span id="scanCandidateName"></span></div>
+      <div class="scan-candidate-row"><span class="label">Phone</span><span id="scanCandidatePhone"></span></div>
+      <div class="scan-candidate-row"><span class="label">ID</span><span id="scanCandidateId" style="font-family:monospace;"></span></div>
+      <div class="scan-candidate-row"><span class="label">Registered for</span><span id="scanCandidateEvents"></span></div>
+      <div class="btn-row">
+        <button class="btn" id="confirmCheckinBtn" style="flex:1;">✅ Check in</button>
+        <button class="btn secondary" id="cancelCandidateBtn">Scan next</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -688,6 +705,33 @@ footer{border-top:1px solid var(--line); padding:28px 24px; text-align:center; c
     <p class="sub" id="qrViewId" style="font-family:monospace; letter-spacing:.05em;"></p>
     <div class="btn-row">
       <button class="btn" id="qrDownloadBtn" style="flex:1;">Download QR</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== EDIT PARTICIPANT MODAL ===================== -->
+<div class="modal-backdrop" id="editParticipantModal">
+  <div class="modal">
+    <button class="modal-close" id="closeEditParticipantModal" aria-label="Close">&times;</button>
+    <h3>Edit participant</h3>
+    <p class="sub" id="editParticipantIdLabel" style="font-family:monospace;"></p>
+    <div class="grid-2">
+      <div class="field">
+        <label for="editName">Full name</label>
+        <input type="text" id="editName">
+      </div>
+      <div class="field">
+        <label for="editPhone">Phone number</label>
+        <input type="text" id="editPhone">
+      </div>
+    </div>
+    <div class="field">
+      <label>Events (choose up to 3)</label>
+      <div class="event-checklist" id="editEventChecklist"></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn" id="saveEditParticipantBtn" style="flex:1;">Save changes</button>
+      <button class="btn danger" id="deleteEditParticipantBtn">Delete</button>
     </div>
   </div>
 </div>
@@ -785,6 +829,7 @@ function defaultState(){
     },
     admins:{
       main:{username:"admin", password:"electrax2026"},
+      registration:{username:"registration", password:"reg2026"},
       events:{
         colloquium:{username:"colloquium", password:"ece2026"},
         circuitry:{username:"circuitry", password:"ece2026"},
@@ -818,6 +863,7 @@ function restoreSession(){
     if(!raw) return null;
     const parsed = JSON.parse(raw);
     if(parsed && parsed.type==="main") return parsed;
+    if(parsed && parsed.type==="registration") return parsed;
     if(parsed && parsed.type==="event" && STATE.events[parsed.id]) return parsed;
     sessionStorage.removeItem(SESSION_KEY);
     return null;
@@ -874,6 +920,7 @@ function mergeState(loaded){
   }
   if(loaded.admins){
     if(loaded.admins.main) base.admins.main = Object.assign({}, base.admins.main, loaded.admins.main);
+    if(loaded.admins.registration) base.admins.registration = Object.assign({}, base.admins.registration, loaded.admins.registration);
     if(loaded.admins.events){
       Object.keys(base.admins.events).forEach(id=>{
         if(loaded.admins.events[id]) base.admins.events[id] = Object.assign({}, base.admins.events[id], loaded.admins.events[id]);
@@ -1202,6 +1249,14 @@ async function attemptLogin(){
     enterAdmin();
     return;
   }
+  const r = STATE.admins.registration;
+  if(u===r.username && p===r.password){
+    session = {type:"registration"};
+    persistSession();
+    loginModal.classList.remove("show");
+    enterAdmin();
+    return;
+  }
   for(const [eid, cred] of Object.entries(STATE.admins.events)){
     if(u===cred.username && p===cred.password){
       session = {type:"event", id:eid};
@@ -1250,7 +1305,13 @@ function renderParticipantTable(filter){
                 `).join("")}
               </div>
             </td>
-            <td><button type="button" class="qr-btn-mini" data-view-qr="${p.id}">View QR</button></td>
+            <td>
+              <div class="btn-row" style="gap:6px; margin:0;">
+                <button type="button" class="qr-btn-mini" data-view-qr="${p.id}">View QR</button>
+                <button type="button" class="qr-btn-mini" data-edit-participant="${p.id}">Edit</button>
+                <button type="button" class="qr-btn-mini" data-delete-participant="${p.id}" style="color:var(--danger); border-color:var(--danger);">Delete</button>
+              </div>
+            </td>
           </tr>
         `).join("")}
       </tbody>
@@ -1258,6 +1319,12 @@ function renderParticipantTable(filter){
   `;
   wrap.querySelectorAll("[data-view-qr]").forEach(btn=>{
     btn.addEventListener("click", ()=>openQRView(btn.dataset.viewQr));
+  });
+  wrap.querySelectorAll("[data-edit-participant]").forEach(btn=>{
+    btn.addEventListener("click", ()=>openEditParticipantModal(btn.dataset.editParticipant));
+  });
+  wrap.querySelectorAll("[data-delete-participant]").forEach(btn=>{
+    btn.addEventListener("click", ()=>confirmDeleteParticipant(btn.dataset.deleteParticipant));
   });
 }
 
@@ -1284,10 +1351,100 @@ document.getElementById("qrDownloadBtn").addEventListener("click", ()=>{
   link.click();
 });
 
+/* ---------- edit / delete participant ---------- */
+let editingParticipantId = null;
+const editParticipantModal = document.getElementById("editParticipantModal");
+
+function openEditParticipantModal(participantId){
+  const p = STATE.participants[participantId];
+  if(!p) return;
+  editingParticipantId = participantId;
+  document.getElementById("editParticipantIdLabel").textContent = p.id;
+  document.getElementById("editName").value = p.name;
+  document.getElementById("editPhone").value = p.phone;
+  const checklist = document.getElementById("editEventChecklist");
+  checklist.innerHTML = Object.values(STATE.events).map(ev=>`
+    <label class="event-check-item">
+      <input type="checkbox" value="${ev.id}" data-role="editEventCheck" ${p.events.includes(ev.id)?"checked":""}>
+      <span>${ev.name}</span>
+    </label>
+  `).join("");
+  checklist.querySelectorAll('[data-role="editEventCheck"]').forEach(cb=>{
+    cb.addEventListener("change", ()=>{
+      const checked = checklist.querySelectorAll('[data-role="editEventCheck"]:checked');
+      if(checked.length > 3){
+        cb.checked = false;
+        toast("Participants can register for up to 3 events only");
+      }
+    });
+  });
+  editParticipantModal.classList.add("show");
+}
+document.getElementById("closeEditParticipantModal").addEventListener("click", ()=>editParticipantModal.classList.remove("show"));
+editParticipantModal.addEventListener("click", (e)=>{ if(e.target===editParticipantModal) editParticipantModal.classList.remove("show"); });
+
+document.getElementById("saveEditParticipantBtn").addEventListener("click", async ()=>{
+  const p = STATE.participants[editingParticipantId];
+  if(!p) return;
+  const name = document.getElementById("editName").value.trim();
+  const phone = document.getElementById("editPhone").value.trim();
+  const selectedEvents = Array.from(document.querySelectorAll('#editEventChecklist [data-role="editEventCheck"]:checked')).map(cb=>cb.value);
+  if(!name || !phone){ toast("Name and phone are required"); return; }
+  if(selectedEvents.length===0){ toast("Select at least one event"); return; }
+  if(selectedEvents.length>3){ toast("Maximum 3 events per participant"); return; }
+  const oldEvents = p.events;
+  const newCheckins = {};
+  selectedEvents.forEach(eid=>{ newCheckins[eid] = p.checkins[eid] || false; });
+  oldEvents.forEach(eid=>{
+    if(!selectedEvents.includes(eid) && p.checkins[eid] && STATE.events[eid]){
+      STATE.events[eid].checkedIn = Math.max(0, (STATE.events[eid].checkedIn||0) - 1);
+    }
+  });
+  p.name = name;
+  p.phone = phone;
+  p.events = selectedEvents;
+  p.checkins = newCheckins;
+  await saveState();
+  editParticipantModal.classList.remove("show");
+  toast(name + "'s details were updated");
+  renderAdmin();
+});
+
+document.getElementById("deleteEditParticipantBtn").addEventListener("click", async ()=>{
+  if(!editingParticipantId) return;
+  const p = STATE.participants[editingParticipantId];
+  if(p && !window.confirm(`Delete ${p.name} (${p.id})? This can't be undone.`)) return;
+  await deleteParticipant(editingParticipantId);
+  editParticipantModal.classList.remove("show");
+});
+
+async function confirmDeleteParticipant(participantId){
+  const p = STATE.participants[participantId];
+  if(!p) return;
+  if(!window.confirm(`Delete ${p.name} (${p.id})? This can't be undone.`)) return;
+  await deleteParticipant(participantId);
+}
+
+async function deleteParticipant(participantId){
+  const p = STATE.participants[participantId];
+  if(!p) return;
+  p.events.forEach(eid=>{
+    if(p.checkins[eid] && STATE.events[eid]){
+      STATE.events[eid].checkedIn = Math.max(0, (STATE.events[eid].checkedIn||0) - 1);
+    }
+  });
+  delete STATE.participants[participantId];
+  await saveState();
+  toast(p.name + " was removed");
+  renderAdmin();
+}
+
 let html5QrScanner = null;
 let activeScanEventId = null;
 let scanMode = "checkin"; // "checkin" | "register"
 const scanModal = document.getElementById("scanModal");
+
+let pendingCheckin = null;
 
 function openScanModal(eventId){
   scanMode = "checkin";
@@ -1296,6 +1453,8 @@ function openScanModal(eventId){
   const msg = document.getElementById("scanResultMsg");
   msg.style.display = "none";
   document.getElementById("manualScanId").value = "";
+  document.getElementById("scanCandidateCard").classList.remove("show");
+  pendingCheckin = null;
   scanModal.classList.add("show");
   startScanner();
 }
@@ -1313,6 +1472,8 @@ function closeScanModal(){
   scanModal.classList.remove("show");
   stopScanner();
   activeScanEventId = null;
+  pendingCheckin = null;
+  document.getElementById("scanCandidateCard").classList.remove("show");
 }
 document.getElementById("closeScanModal").addEventListener("click", closeScanModal);
 scanModal.addEventListener("click", (e)=>{ if(e.target===scanModal) closeScanModal(); });
@@ -1343,9 +1504,58 @@ function handleScan(value){
   if(scanMode === "register"){
     fillRegistrationId(value);
   } else if(activeScanEventId){
-    checkInParticipant(value, activeScanEventId);
+    showScanCandidate(value, activeScanEventId);
   }
 }
+
+function showScanCandidate(participantId, eventId){
+  const msg = document.getElementById("scanResultMsg");
+  const card = document.getElementById("scanCandidateCard");
+  msg.style.display = "none";
+  card.classList.remove("show");
+  pendingCheckin = null;
+  const p = STATE.participants[participantId];
+  if(!p){
+    msg.style.display = "block";
+    msg.textContent = "❌ No participant found with that ID.";
+    buzz([200]);
+    return;
+  }
+  if(!p.events.includes(eventId)){
+    msg.style.display = "block";
+    msg.textContent = `❌ ${p.name} is not registered for this event.`;
+    buzz([200]);
+    return;
+  }
+  if(p.checkins[eventId]){
+    msg.style.display = "block";
+    msg.textContent = `⚠️ ${p.name} is already checked in.`;
+    return;
+  }
+  pendingCheckin = {participantId, eventId};
+  document.getElementById("scanCandidateName").textContent = p.name;
+  document.getElementById("scanCandidatePhone").textContent = p.phone;
+  document.getElementById("scanCandidateId").textContent = p.id;
+  document.getElementById("scanCandidateEvents").textContent = p.events.map(eid=>STATE.events[eid]?STATE.events[eid].name:eid).join(", ");
+  card.classList.add("show");
+  stopScanner();
+}
+
+document.getElementById("confirmCheckinBtn").addEventListener("click", async ()=>{
+  if(!pendingCheckin) return;
+  const {participantId, eventId} = pendingCheckin;
+  pendingCheckin = null;
+  await checkInParticipant(participantId, eventId);
+  document.getElementById("scanCandidateCard").classList.remove("show");
+  document.getElementById("manualScanId").value = "";
+  if(scanModal.classList.contains("show")) startScanner();
+});
+document.getElementById("cancelCandidateBtn").addEventListener("click", ()=>{
+  pendingCheckin = null;
+  document.getElementById("scanCandidateCard").classList.remove("show");
+  document.getElementById("manualScanId").value = "";
+  if(scanModal.classList.contains("show")) startScanner();
+});
 
 function fillRegistrationId(value){
   closeScanModal();
@@ -1405,6 +1615,8 @@ function enterAdmin(){
   const who = document.getElementById("adminWho");
   if(session.type==="main"){
     who.innerHTML = 'Signed in as <b>Main Organiser</b>';
+  } else if(session.type==="registration"){
+    who.innerHTML = 'Signed in as <b>Registration Desk</b>';
   } else {
     who.innerHTML = 'Signed in as <b>'+STATE.events[session.id].name+' coordinator</b>';
   }
@@ -1423,6 +1635,9 @@ function renderAdmin(){
   if(session.type==="main"){
     body.innerHTML = mainAdminHTML();
     wireMainAdmin();
+  } else if(session.type==="registration"){
+    body.innerHTML = registrationAdminHTML();
+    wireRegistrationAdmin();
   } else {
     body.innerHTML = eventAdminHTML(STATE.events[session.id]);
     wireEventAdmin(session.id);
@@ -1430,50 +1645,8 @@ function renderAdmin(){
 }
 
 /* ---- main admin ---- */
-function mainAdminHTML(){
+function participantsSectionHTML(){
   return `
-    <div class="admin-section">
-      <h3>Lunch control</h3>
-      <p class="sub">Turning this on shades every event card and shows the lunch banner site-wide.</p>
-      <div class="lunch-toggle-card">
-        <div>
-          <div class="label">Lunch break</div>
-          <div class="desc">${STATE.lunch? "Currently ON — events are shown as paused." : "Currently OFF — events are running as normal."}</div>
-        </div>
-        <label class="switch">
-          <input type="checkbox" id="lunchSwitch" ${STATE.lunch?"checked":""}>
-          <span class="track"></span>
-        </label>
-      </div>
-      <div class="sound-toggle-card">
-        <div>
-          <div class="label">Sound &amp; vibration cues</div>
-          <div class="desc">Plays a short chime (and buzzes on phones) when lunch or an event status changes — applies to every visitor's device.</div>
-        </div>
-        <label class="switch">
-          <input type="checkbox" id="soundSwitch" ${STATE.soundEnabled?"checked":""}>
-          <span class="track"></span>
-        </label>
-      </div>
-    </div>
-
-    <div class="admin-section">
-      <h3>Announcements</h3>
-      <p class="sub">Posted announcements appear above the event list, newest first.</p>
-      <div class="announce-form">
-        <div class="field">
-          <label for="newAnnounceText">Announcement</label>
-          <input type="text" id="newAnnounceText" placeholder="e.g. Tech Quiz shifted to Seminar Hall">
-        </div>
-        <div class="field" style="flex:0 0 120px;">
-          <label for="newAnnounceTime">Time</label>
-          <input type="text" id="newAnnounceTime" placeholder="10:30 AM">
-        </div>
-        <button class="btn" id="postAnnounceBtn">Post</button>
-      </div>
-      <div id="adminAnnounceList"></div>
-    </div>
-
     <div class="admin-section">
       <h3>Participant registration &amp; check-in</h3>
       <p class="sub">Register a participant at the desk, hand them their QR code — event coordinators scan it to check them in at each event they registered for. Every participant's full record is visible here.</p>
@@ -1520,6 +1693,127 @@ function mainAdminHTML(){
         <div id="participantTableWrap"></div>
       </div>
     </div>
+  `;
+}
+
+function wireParticipantsSection(){
+  const regChecklist = document.getElementById("regEventChecklist");
+  if(regChecklist){
+    regChecklist.querySelectorAll('[data-role="regEventCheck"]').forEach(cb=>{
+      cb.addEventListener("change", ()=>{
+        const checked = regChecklist.querySelectorAll('[data-role="regEventCheck"]:checked');
+        if(checked.length > 3){
+          cb.checked = false;
+          toast("Participants can register for up to 3 events only");
+        }
+      });
+    });
+  }
+
+  const regScanBtn = document.getElementById("regScanBtn");
+  if(regScanBtn){
+    regScanBtn.addEventListener("click", openScanModalForRegistration);
+  }
+
+  const registerBtn = document.getElementById("registerBtn");
+  if(registerBtn){
+    registerBtn.addEventListener("click", async ()=>{
+      const id = document.getElementById("regParticipantId").value.trim();
+      const name = document.getElementById("regName").value.trim();
+      const phone = document.getElementById("regPhone").value.trim();
+      const selectedEvents = Array.from(document.querySelectorAll('[data-role="regEventCheck"]:checked')).map(cb=>cb.value);
+      if(!id){ toast("Scan or enter the participant's QR code/ID first"); return; }
+      if(!name || !phone){ toast("Name and phone are required"); return; }
+      if(selectedEvents.length===0){ toast("Select at least one event"); return; }
+      if(selectedEvents.length>3){ toast("Maximum 3 events per participant"); return; }
+      if(STATE.participants[id]){
+        toast(`That code is already registered to ${STATE.participants[id].name} — check the table below to edit it`);
+        return;
+      }
+      const checkins = {};
+      selectedEvents.forEach(eid=>{ checkins[eid]=false; });
+      STATE.participants[id] = { id, name, phone, events:selectedEvents, checkins, registeredAt:new Date().toISOString() };
+      await saveState();
+      document.getElementById("regParticipantId").value = "";
+      document.getElementById("regName").value = "";
+      document.getElementById("regPhone").value = "";
+      document.querySelectorAll('[data-role="regEventCheck"]').forEach(cb=>cb.checked=false);
+      const msg = document.getElementById("regMsg");
+      msg.classList.add("show");
+      setTimeout(()=>msg.classList.remove("show"), 2400);
+      toast(name + " registered");
+      renderParticipantTable();
+    });
+  }
+
+  const searchInput = document.getElementById("participantSearch");
+  if(searchInput){
+    searchInput.addEventListener("input", ()=>{
+      renderParticipantTable(searchInput.value.trim().toLowerCase());
+    });
+  }
+
+  renderParticipantTable();
+}
+
+function registrationAdminHTML(){
+  return `
+    <div class="admin-section">
+      <h3>Registration desk</h3>
+      <p class="sub">Register participants, edit their details, or remove a record. Changes save immediately and are visible to every event coordinator for check-in.</p>
+    </div>
+    ${participantsSectionHTML()}
+  `;
+}
+function wireRegistrationAdmin(){
+  wireParticipantsSection();
+}
+
+function mainAdminHTML(){
+  return `
+    <div class="admin-section">
+      <h3>Lunch control</h3>
+      <p class="sub">Turning this on shades every event card and shows the lunch banner site-wide.</p>
+      <div class="lunch-toggle-card">
+        <div>
+          <div class="label">Lunch break</div>
+          <div class="desc">${STATE.lunch? "Currently ON — events are shown as paused." : "Currently OFF — events are running as normal."}</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="lunchSwitch" ${STATE.lunch?"checked":""}>
+          <span class="track"></span>
+        </label>
+      </div>
+      <div class="sound-toggle-card">
+        <div>
+          <div class="label">Sound &amp; vibration cues</div>
+          <div class="desc">Plays a short chime (and buzzes on phones) when lunch or an event status changes — applies to every visitor's device.</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="soundSwitch" ${STATE.soundEnabled?"checked":""}>
+          <span class="track"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="admin-section">
+      <h3>Announcements</h3>
+      <p class="sub">Posted announcements appear above the event list, newest first.</p>
+      <div class="announce-form">
+        <div class="field">
+          <label for="newAnnounceText">Announcement</label>
+          <input type="text" id="newAnnounceText" placeholder="e.g. Tech Quiz shifted to Seminar Hall">
+        </div>
+        <div class="field" style="flex:0 0 120px;">
+          <label for="newAnnounceTime">Time</label>
+          <input type="text" id="newAnnounceTime" placeholder="10:30 AM">
+        </div>
+        <button class="btn" id="postAnnounceBtn">Post</button>
+      </div>
+      <div id="adminAnnounceList"></div>
+    </div>
+
+    ${participantsSectionHTML()}
 
     <div class="admin-section">
       <h3>Events — status, schedule, venue &amp; coordinators</h3>
@@ -1624,63 +1918,7 @@ function wireMainAdmin(){
     });
   });
 
-  const regChecklist = document.getElementById("regEventChecklist");
-  if(regChecklist){
-    regChecklist.querySelectorAll('[data-role="regEventCheck"]').forEach(cb=>{
-      cb.addEventListener("change", ()=>{
-        const checked = regChecklist.querySelectorAll('[data-role="regEventCheck"]:checked');
-        if(checked.length > 3){
-          cb.checked = false;
-          toast("Participants can register for up to 3 events only");
-        }
-      });
-    });
-  }
-
-  const regScanBtn = document.getElementById("regScanBtn");
-  if(regScanBtn){
-    regScanBtn.addEventListener("click", openScanModalForRegistration);
-  }
-
-  const registerBtn = document.getElementById("registerBtn");
-  if(registerBtn){
-    registerBtn.addEventListener("click", async ()=>{
-      const id = document.getElementById("regParticipantId").value.trim();
-      const name = document.getElementById("regName").value.trim();
-      const phone = document.getElementById("regPhone").value.trim();
-      const selectedEvents = Array.from(document.querySelectorAll('[data-role="regEventCheck"]:checked')).map(cb=>cb.value);
-      if(!id){ toast("Scan or enter the participant's QR code/ID first"); return; }
-      if(!name || !phone){ toast("Name and phone are required"); return; }
-      if(selectedEvents.length===0){ toast("Select at least one event"); return; }
-      if(selectedEvents.length>3){ toast("Maximum 3 events per participant"); return; }
-      if(STATE.participants[id]){
-        toast(`That code is already registered to ${STATE.participants[id].name} — check the table below to edit it`);
-        return;
-      }
-      const checkins = {};
-      selectedEvents.forEach(eid=>{ checkins[eid]=false; });
-      STATE.participants[id] = { id, name, phone, events:selectedEvents, checkins, registeredAt:new Date().toISOString() };
-      await saveState();
-      document.getElementById("regParticipantId").value = "";
-      document.getElementById("regName").value = "";
-      document.getElementById("regPhone").value = "";
-      document.querySelectorAll('[data-role="regEventCheck"]').forEach(cb=>cb.checked=false);
-      const msg = document.getElementById("regMsg");
-      msg.classList.add("show");
-      setTimeout(()=>msg.classList.remove("show"), 2400);
-      toast(name + " registered");
-      renderParticipantTable();
-    });
-  }
-
-  const searchInput = document.getElementById("participantSearch");
-  if(searchInput){
-    searchInput.addEventListener("input", ()=>{
-      renderParticipantTable(searchInput.value.trim().toLowerCase());
-    });
-  }
-
-  renderParticipantTable();
+  wireParticipantsSection();
   renderAdminAnnounceList();
   renderAdminEventList();
 }
@@ -1980,10 +2218,47 @@ function eventAdminHTML(ev){
       <p class="sub">Update your event's status, schedule, venue and coordinator details. Changes appear on the public page immediately.</p>
       ${adminEventCardHTML(ev)}
     </div>
+    <div class="admin-section">
+      <h3>Registered participants</h3>
+      <p class="sub">Everyone registered for this event, and their check-in status.</p>
+      <div id="eventParticipantTableWrap"></div>
+    </div>
   `;
 }
 function wireEventAdmin(eventId){
   wireEventCard(eventId, false);
+  renderEventParticipantList(eventId);
+}
+
+function renderEventParticipantList(eventId){
+  const wrap = document.getElementById("eventParticipantTableWrap");
+  if(!wrap) return;
+  const list = Object.values(STATE.participants)
+    .filter(p=>p.events.includes(eventId))
+    .sort((a,b)=> new Date(b.registeredAt) - new Date(a.registeredAt));
+  if(list.length===0){
+    wrap.innerHTML = '<p class="announce-empty">No one has registered for this event yet.</p>';
+    return;
+  }
+  wrap.innerHTML = `
+    <table class="participant-table">
+      <thead><tr><th>Name</th><th>Phone</th><th>ID</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        ${list.map(p=>`
+          <tr>
+            <td>${p.name}</td>
+            <td>${p.phone}</td>
+            <td class="pid">${p.id}</td>
+            <td><span class="event-chip ${p.checkins[eventId] ? 'checked' : 'pending'}">${p.checkins[eventId] ? 'Checked in ✓' : 'Not checked in'}</span></td>
+            <td>${p.checkins[eventId] ? '' : `<button type="button" class="qr-btn-mini" data-quick-checkin="${p.id}">Check in</button>`}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+  wrap.querySelectorAll("[data-quick-checkin]").forEach(btn=>{
+    btn.addEventListener("click", ()=>checkInParticipant(btn.dataset.quickCheckin, eventId));
+  });
 }
 
 /* ---------- init ---------- */
