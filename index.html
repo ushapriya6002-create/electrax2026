@@ -1842,6 +1842,22 @@ function mainAdminHTML(){
       </div>
 
       <div class="admin-event-card">
+        <h4>Registration desk login</h4>
+        <div class="grid-2">
+          <div class="field">
+            <label for="regAdminUser">Username</label>
+            <input type="text" id="regAdminUser" value="${STATE.admins.registration.username}">
+          </div>
+          <div class="field">
+            <label for="regAdminPass">Password</label>
+            <input type="text" id="regAdminPass" value="${STATE.admins.registration.password}">
+          </div>
+        </div>
+        <button class="btn" id="saveRegAdminBtn">Save registration desk login</button>
+        <p class="cred-row-msg" id="regAdminMsg">Saved.</p>
+      </div>
+
+      <div class="admin-event-card">
         <h4>Event coordinator logins</h4>
         <table class="cred-edit-table">
           <thead><tr><th>Event</th><th>Username</th><th>Password</th><th></th></tr></thead>
@@ -1900,6 +1916,18 @@ function wireMainAdmin(){
     msg.classList.add("show");
     setTimeout(()=>msg.classList.remove("show"), 2400);
     toast("Your login was updated");
+  });
+
+  document.getElementById("saveRegAdminBtn").addEventListener("click", async ()=>{
+    const newUser = document.getElementById("regAdminUser").value.trim();
+    const newPass = document.getElementById("regAdminPass").value.trim();
+    if(!newUser || !newPass){ toast("Username and password can't be empty"); return; }
+    STATE.admins.registration = {username:newUser, password:newPass};
+    await saveState();
+    const msg = document.getElementById("regAdminMsg");
+    msg.classList.add("show");
+    setTimeout(()=>msg.classList.remove("show"), 2400);
+    toast("Registration desk login updated");
   });
 
   document.querySelectorAll('[data-role="credSave"]').forEach(btn=>{
