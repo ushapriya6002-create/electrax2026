@@ -525,6 +525,25 @@ footer{border-top:1px solid var(--line); padding:28px 24px; text-align:center; c
 .scan-team-members{display:flex; flex-wrap:wrap; gap:6px;}
 .scan-team-chip{border:1px solid var(--line); border-radius:999px; padding:3px 10px; font-size:12px;}
 
+/* ---------- select-then-upload document widget ---------- */
+.doc-file-row{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;}
+.file-upload-label.secondary{
+  border-style:solid; border-color:var(--line); background:none; color:var(--ink-dim);
+}
+.file-upload-label.secondary:hover{border-color:var(--ember); color:var(--ember); background:none;}
+.doc-file-selected{font-size:12px; color:var(--ink-faint);}
+
+/* ---------- admin: per-place winner slots ---------- */
+.winner-slot{border:1px solid var(--line); border-radius:var(--radius); padding:10px 12px; margin-bottom:10px;}
+.winner-slot-head{display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:12.5px; font-weight:600; margin-bottom:8px;}
+.winner-slot-value{font-size:13px;}
+.grid-3-inline{display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px;}
+@media (max-width:520px){ .grid-3-inline{grid-template-columns:1fr;} }
+
+/* ---------- admin: checked-in team blocks ---------- */
+.team-block{border:1px solid var(--line); border-radius:var(--radius); padding:10px 12px; margin-bottom:10px;}
+.team-block-members{display:flex; flex-wrap:wrap; gap:6px;}
+
 /* ---------- app loading / sync state ---------- */
 #appLoading{
   position:fixed; inset:0; z-index:500; background:var(--bg);
@@ -719,6 +738,7 @@ footer{border-top:1px solid var(--line); padding:28px 24px; text-align:center; c
         <div class="btn-row" style="margin-top:8px;">
           <input type="text" id="scanTeamAddInput" placeholder="Teammate's participant ID" style="flex:1; font-family:monospace;">
           <button class="btn secondary" id="scanTeamAddBtn">+ Add</button>
+          <button class="btn secondary" id="scanTeamAddScanBtn">📷 Scan</button>
         </div>
         <div class="field" style="margin-top:10px;">
           <label>Team presentation title</label>
@@ -833,7 +853,7 @@ function defaultState(){
         status:"not-started", venue:"Seminar Hall", room:"S-104",
         startTime:"2026-09-12T09:00",
         coordinator:{name:"", phone:""}, icon:"mic",
-        checkedIn:0, winnerCount:3, winners:["","",""], photos:[], feedbackUrl:"",
+        checkedIn:0, winnerCount:3, winners:[["","",""],["","",""],["","",""]], photos:[], feedbackUrl:"",
         rounds:{enabled:false, round1:{label:"Round 1", status:"not-started"}, round2:{label:"Round 2", status:"not-started"}}
       },
       circuitry:{
@@ -842,7 +862,7 @@ function defaultState(){
         status:"not-started", venue:"ECE Hardware Lab", room:"E-201",
         startTime:"2026-09-12T10:30",
         coordinator:{name:"", phone:""}, icon:"chip",
-        checkedIn:0, winnerCount:2, winners:["",""], photos:[], feedbackUrl:"",
+        checkedIn:0, winnerCount:2, winners:[["","",""],["","",""]], photos:[], feedbackUrl:"",
         rounds:{enabled:false, round1:{label:"Round 1", status:"not-started"}, round2:{label:"Round 2", status:"not-started"}}
       },
       quiz:{
@@ -851,7 +871,7 @@ function defaultState(){
         status:"not-started", venue:"ECE Seminar Hall", room:"E-105",
         startTime:"2026-09-12T09:30",
         coordinator:{name:"", phone:""}, icon:"quiz",
-        checkedIn:0, winnerCount:2, winners:["",""], photos:[], feedbackUrl:"",
+        checkedIn:0, winnerCount:2, winners:[["","",""],["","",""]], photos:[], feedbackUrl:"",
         rounds:{enabled:false, round1:{label:"Round 1", status:"not-started"}, round2:{label:"Round 2", status:"not-started"}}
       },
       clues:{
@@ -860,7 +880,7 @@ function defaultState(){
         status:"not-started", venue:"Main Block Corridor", room:"MB-Ground Floor",
         startTime:"2026-09-12T11:00",
         coordinator:{name:"", phone:""}, icon:"clue",
-        checkedIn:0, winnerCount:2, winners:["",""], photos:[], feedbackUrl:"",
+        checkedIn:0, winnerCount:2, winners:[["","",""],["","",""]], photos:[], feedbackUrl:"",
         rounds:{enabled:false, round1:{label:"Round 1", status:"not-started"}, round2:{label:"Round 2", status:"not-started"}}
       },
       freefire:{
@@ -869,7 +889,7 @@ function defaultState(){
         status:"not-started", venue:"IT Lab", room:"IT-02",
         startTime:"2026-09-12T13:00",
         coordinator:{name:"", phone:""}, icon:"game",
-        checkedIn:0, winnerCount:2, winners:["",""], photos:[], feedbackUrl:"",
+        checkedIn:0, winnerCount:2, winners:[["","",""],["","",""]], photos:[], feedbackUrl:"",
         rounds:{enabled:false, round1:{label:"Round 1", status:"not-started"}, round2:{label:"Round 2", status:"not-started"}}
       },
       shortfilm:{
@@ -878,7 +898,7 @@ function defaultState(){
         status:"not-started", venue:"Mini Auditorium", room:"MA-01",
         startTime:"2026-09-12T14:30",
         coordinator:{name:"", phone:""}, icon:"film",
-        checkedIn:0, winnerCount:2, winners:["",""], photos:[], feedbackUrl:"",
+        checkedIn:0, winnerCount:2, winners:[["","",""],["","",""]], photos:[], feedbackUrl:"",
         rounds:{enabled:false, round1:{label:"Round 1", status:"not-started"}, round2:{label:"Round 2", status:"not-started"}}
       }
     },
@@ -961,15 +981,25 @@ function mergeState(loaded){
       if(!loadedEv) return;
       const mergedEv = Object.assign({}, defEv, loadedEv);
 
-      /* winners: keep the canonical slot count per event, migrate legacy
-         single "winner" string into the first slot if present */
+      /* winners: keep the canonical slot count per event; each place now holds
+         up to 3 member names (a team can share one prize). Migrate legacy
+         flat strings ("Team X") and the very old single "winner" field. */
       mergedEv.winnerCount = defEv.winnerCount;
       if(Array.isArray(loadedEv.winners)){
-        mergedEv.winners = defEv.winners.map((_, i)=> typeof loadedEv.winners[i]==="string" ? loadedEv.winners[i] : "");
+        mergedEv.winners = defEv.winners.map((_, i)=>{
+          const loadedPlace = loadedEv.winners[i];
+          if(Array.isArray(loadedPlace)){
+            return [0,1,2].map(j=> typeof loadedPlace[j]==="string" ? loadedPlace[j] : "");
+          }
+          if(typeof loadedPlace === "string" && loadedPlace.trim()){
+            return [loadedPlace, "", ""];
+          }
+          return ["","",""];
+        });
       } else {
-        mergedEv.winners = defEv.winners.slice();
+        mergedEv.winners = defEv.winners.map(()=>["","",""]);
         if(typeof loadedEv.winner === "string" && loadedEv.winner.trim()){
-          mergedEv.winners[0] = loadedEv.winner;
+          mergedEv.winners[0][0] = loadedEv.winner;
         }
       }
       delete mergedEv.winner;
@@ -1152,7 +1182,10 @@ function roundStatusHTML(ev){
 function eventCardHTML(ev){
   const hasCoord = ev.coordinator.name && ev.coordinator.name.trim().length>0;
   const isCompleted = ev.status==="completed";
-  const winnerEntries = (ev.winners||[]).map((w,i)=>({w, place:i+1})).filter(x=>x.w && x.w.trim().length>0);
+  const winnerEntries = (ev.winners||[]).map((members,i)=>({
+    members:(members||[]).filter(n=>n && n.trim().length>0),
+    place:i+1
+  })).filter(x=>x.members.length>0);
   const hasWinner = winnerEntries.length>0;
   const hasPhotos = ev.photos && ev.photos.length>0;
   const hasFeedback = isCompleted && ev.feedbackUrl && ev.feedbackUrl.trim().length>0;
@@ -1186,7 +1219,7 @@ function eventCardHTML(ev){
       </div>
       ${(hasWinner || hasPhotos || hasFeedback) ? `
         <div class="post-event">
-          ${hasWinner ? `<div class="winners-list">${winnerEntries.map(x=>`<div class="winner-banner">${PLACE_EMOJI[x.place]||'🏆'} <span>${x.w}</span></div>`).join("")}</div>` : ``}
+          ${hasWinner ? `<div class="winners-list">${winnerEntries.map(x=>`<div class="winner-banner">${PLACE_EMOJI[x.place]||'🏆'} <span>${x.members.join(", ")}</span></div>`).join("")}</div>` : ``}
           ${hasPhotos ? `<div class="photo-strip">${ev.photos.map(p=>`<a href="${p}" target="_blank" rel="noopener"><img src="${p}" alt="Event photo" loading="lazy"></a>`).join("")}</div>` : ``}
           ${hasFeedback ? `<a class="feedback-btn" href="${ev.feedbackUrl}" target="_blank" rel="noopener">📝 Leave feedback</a>` : ``}
         </div>
@@ -1252,39 +1285,65 @@ function documentUploadWidgetHTML(ev, p){
         <label>Presentation title <span style="color:var(--ember);">*</span> — required to upload a file</label>
         <input type="text" data-role="docTitleInput" value="${title}" placeholder="Title of your presentation">
       </div>
-      <label class="file-upload-label">
-        ${doc ? "🔄 Replace file" : "⬆️ Upload file"}
-        <input type="file" data-role="docFile" data-event-doc="${ev.id}" accept=".pdf,.ppt,.pptx,.doc,.docx,image/*">
-      </label>
+      <div class="doc-file-row">
+        <label class="file-upload-label secondary">
+          📎 Select document
+          <input type="file" data-role="docFile" data-event-doc="${ev.id}" accept=".pdf,.ppt,.pptx,.doc,.docx,image/*">
+        </label>
+        <span class="doc-file-selected" data-role="docFileName">No file selected</span>
+      </div>
+      <button type="button" class="btn secondary" data-role="docUploadBtn" data-event-doc="${ev.id}" disabled>${doc ? "🔄 Upload replacement" : "⬆️ Upload"}</button>
       <span class="upload-progress" data-role="docUploadProgress"></span>
-      <p class="doc-note">A title is required before uploading. The file itself isn't compulsory — only needed if you haven't already shared it with the coordinator another way. PDF, PPT or Word, up to 15&nbsp;MB.</p>
+      <p class="doc-note">Select a document and enter a presentation title, then hit Upload. The file itself isn't compulsory — only needed if you haven't already shared it with the coordinator another way. PDF, PPT or Word, up to 15&nbsp;MB.</p>
     </div>
   `;
 }
 
 function wireMyEventsDocUploads(participantId){
   document.querySelectorAll('#myEventsResults [data-role="docFile"]').forEach(input=>{
-    input.addEventListener("change", async (e)=>{
+    input.addEventListener("change", (e)=>{
       const file = e.target.files[0];
-      if(!file) return;
       const card = input.closest(".doc-upload-card");
+      const nameEl = card.querySelector('[data-role="docFileName"]');
+      const uploadBtn = card.querySelector('[data-role="docUploadBtn"]');
+      if(file){
+        if(file.size > 15*1024*1024){
+          toast("That file is too large — please keep it under 15 MB");
+          e.target.value = "";
+          nameEl.textContent = "No file selected";
+          uploadBtn.disabled = true;
+          return;
+        }
+        nameEl.textContent = file.name;
+        uploadBtn.disabled = false;
+      } else {
+        nameEl.textContent = "No file selected";
+        uploadBtn.disabled = true;
+      }
+    });
+  });
+
+  document.querySelectorAll('#myEventsResults [data-role="docUploadBtn"]').forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const card = btn.closest(".doc-upload-card");
+      const fileInput = card.querySelector('[data-role="docFile"]');
+      const file = fileInput.files[0];
       const titleInput = card.querySelector('[data-role="docTitleInput"]');
       const title = titleInput ? titleInput.value.trim() : "";
       if(!title){
-        toast("Please enter your presentation title before uploading");
-        e.target.value = "";
+        toast("Please enter your presentation title first");
         if(titleInput) titleInput.focus();
         return;
       }
-      const eventId = input.dataset.eventDoc;
-      const progressEl = card.querySelector('[data-role="docUploadProgress"]');
-      if(file.size > 15*1024*1024){
-        toast("That file is too large — please keep it under 15 MB");
-        e.target.value = "";
+      if(!file){
+        toast("Select a document first, then hit Upload");
         return;
       }
+      const eventId = btn.dataset.eventDoc;
+      const progressEl = card.querySelector('[data-role="docUploadProgress"]');
       progressEl.classList.add("show");
       progressEl.textContent = "Uploading…";
+      btn.disabled = true;
       try{
         const dataUrl = await new Promise((resolve, reject)=>{
           const reader = new FileReader();
@@ -1302,6 +1361,7 @@ function wireMyEventsDocUploads(participantId){
         renderMyEvents(p);
       }catch(err){
         toast("Couldn't upload that file — please try again");
+        btn.disabled = false;
       }finally{
         progressEl.classList.remove("show");
         progressEl.textContent = "";
@@ -1672,7 +1732,8 @@ async function deleteParticipant(participantId){
 
 let html5QrScanner = null;
 let activeScanEventId = null;
-let scanMode = "checkin"; // "checkin" | "register"
+let scanMode = "checkin"; // "checkin" | "register" | "team-add" | "winner"
+let activeWinnerPlace = null;
 const scanModal = document.getElementById("scanModal");
 
 let pendingCheckin = null;
@@ -1680,6 +1741,7 @@ let pendingCheckin = null;
 function openScanModal(eventId){
   scanMode = "checkin";
   activeScanEventId = eventId;
+  activeWinnerPlace = null;
   document.getElementById("scanModalTitle").textContent = "Check in — " + STATE.events[eventId].name;
   const msg = document.getElementById("scanResultMsg");
   msg.style.display = "none";
@@ -1692,10 +1754,25 @@ function openScanModal(eventId){
 function openScanModalForRegistration(){
   scanMode = "register";
   activeScanEventId = null;
+  activeWinnerPlace = null;
   document.getElementById("scanModalTitle").textContent = "Scan the participant's QR code";
   const msg = document.getElementById("scanResultMsg");
   msg.style.display = "none";
   document.getElementById("manualScanId").value = "";
+  document.getElementById("scanCandidateCard").classList.remove("show");
+  scanModal.classList.add("show");
+  startScanner();
+}
+function openScanModalForWinner(placeIndex){
+  scanMode = "winner";
+  activeScanEventId = "colloquium";
+  activeWinnerPlace = placeIndex;
+  const label = (["1st","2nd","3rd"][placeIndex] || (placeIndex+1)+"th") + " place";
+  document.getElementById("scanModalTitle").textContent = `Set ${label} — scan any team member's QR`;
+  const msg = document.getElementById("scanResultMsg");
+  msg.style.display = "none";
+  document.getElementById("manualScanId").value = "";
+  document.getElementById("scanCandidateCard").classList.remove("show");
   scanModal.classList.add("show");
   startScanner();
 }
@@ -1703,6 +1780,8 @@ function closeScanModal(){
   scanModal.classList.remove("show");
   stopScanner();
   activeScanEventId = null;
+  activeWinnerPlace = null;
+  scanMode = "checkin";
   pendingCheckin = null;
   document.getElementById("scanCandidateCard").classList.remove("show");
 }
@@ -1734,9 +1813,42 @@ function stopScanner(){
 function handleScan(value){
   if(scanMode === "register"){
     fillRegistrationId(value);
+  } else if(scanMode === "team-add"){
+    addTeammateById(value);
+  } else if(scanMode === "winner"){
+    setWinnerFromScan(value);
   } else if(activeScanEventId){
     showScanCandidate(value, activeScanEventId);
   }
+}
+
+async function setWinnerFromScan(participantId){
+  const msg = document.getElementById("scanResultMsg");
+  const p = STATE.participants[participantId];
+  if(!p){
+    msg.style.display = "block";
+    msg.textContent = "❌ No participant found with that ID.";
+    buzz([200]);
+    return;
+  }
+  if(!p.events.includes("colloquium")){
+    msg.style.display = "block";
+    msg.textContent = `❌ ${p.name} is not registered for this event.`;
+    buzz([200]);
+    return;
+  }
+  const team = getColloquiumTeam(participantId);
+  const memberIds = team ? team.memberIds : [participantId];
+  const names = memberIds.map(id=> STATE.participants[id] ? STATE.participants[id].name : id).slice(0, TEAM_EVENT_MAX_MEMBERS);
+  const ev = STATE.events.colloquium;
+  ev.winners[activeWinnerPlace] = [0,1,2].map(j=> names[j] || "");
+  await saveState();
+  msg.style.display = "block";
+  msg.textContent = `✅ Set: ${names.join(", ")}`;
+  playChime("status");
+  buzz([80]);
+  renderAdmin();
+  setTimeout(()=>{ if(scanModal.classList.contains("show")) closeScanModal(); }, 1400);
 }
 
 function showScanCandidate(participantId, eventId){
@@ -1796,29 +1908,48 @@ function refreshScanTeamSection(participantId, eventId){
   }).join("");
   document.getElementById("scanTeamTitleInput").value = team ? team.title : "";
   document.getElementById("scanTeamAddInput").value = "";
+  const full = memberIds.length >= TEAM_EVENT_MAX_MEMBERS;
   const addBtn = document.getElementById("scanTeamAddBtn");
-  addBtn.disabled = memberIds.length >= TEAM_EVENT_MAX_MEMBERS;
-  addBtn.textContent = memberIds.length >= TEAM_EVENT_MAX_MEMBERS ? `Team full (${TEAM_EVENT_MAX_MEMBERS} max)` : "+ Add";
+  const scanAddBtn = document.getElementById("scanTeamAddScanBtn");
+  addBtn.disabled = full;
+  addBtn.textContent = full ? `Team full (${TEAM_EVENT_MAX_MEMBERS} max)` : "+ Add";
+  scanAddBtn.disabled = full;
 }
 
-document.getElementById("scanTeamAddBtn").addEventListener("click", async ()=>{
+async function addTeammateById(newId){
   if(!pendingCheckin) return;
   const {participantId, eventId} = pendingCheckin;
   if(eventId !== "colloquium") return;
-  const newId = document.getElementById("scanTeamAddInput").value.trim();
-  if(!newId){ toast("Enter the teammate's participant ID"); return; }
+  const finish = ()=>{
+    scanMode = "checkin";
+    stopScanner();
+    refreshScanTeamSection(participantId, eventId);
+  };
+  if(!newId){ toast("Enter or scan the teammate's participant ID"); finish(); return; }
   const mate = STATE.participants[newId];
-  if(!mate){ toast("No participant found with that ID"); return; }
-  if(!mate.events.includes("colloquium")){ toast(mate.name + " isn't registered for this event"); return; }
+  if(!mate){ toast("No participant found with that ID"); finish(); return; }
+  if(!mate.events.includes("colloquium")){ toast(mate.name + " isn't registered for this event"); finish(); return; }
   const team = getOrCreateColloquiumTeam(participantId);
-  if(team.memberIds.includes(newId)){ toast(mate.name + " is already on this team"); return; }
+  if(team.memberIds.includes(newId)){ toast(mate.name + " is already on this team"); finish(); return; }
   const mateTeam = getColloquiumTeam(newId);
-  if(mateTeam && mateTeam.id !== team.id){ toast(mate.name + " is already on another team"); return; }
-  if(team.memberIds.length >= TEAM_EVENT_MAX_MEMBERS){ toast(`A team can have at most ${TEAM_EVENT_MAX_MEMBERS} members`); return; }
+  if(mateTeam && mateTeam.id !== team.id){ toast(mate.name + " is already on another team"); finish(); return; }
+  if(team.memberIds.length >= TEAM_EVENT_MAX_MEMBERS){ toast(`A team can have at most ${TEAM_EVENT_MAX_MEMBERS} members`); finish(); return; }
   team.memberIds.push(newId);
   await saveState();
   toast(mate.name + " added to the team");
-  refreshScanTeamSection(participantId, eventId);
+  finish();
+}
+
+document.getElementById("scanTeamAddBtn").addEventListener("click", ()=>{
+  const newId = document.getElementById("scanTeamAddInput").value.trim();
+  addTeammateById(newId);
+});
+document.getElementById("scanTeamAddScanBtn").addEventListener("click", ()=>{
+  if(!pendingCheckin) return;
+  scanMode = "team-add";
+  document.getElementById("scanResultMsg").style.display = "none";
+  startScanner();
+  toast("Scan the teammate's QR code");
 });
 
 document.getElementById("scanTeamTitleSaveBtn").addEventListener("click", async ()=>{
@@ -1837,7 +1968,18 @@ document.getElementById("confirmCheckinBtn").addEventListener("click", async ()=
   if(!pendingCheckin) return;
   const {participantId, eventId} = pendingCheckin;
   pendingCheckin = null;
-  await checkInParticipant(participantId, eventId);
+  if(eventId === "colloquium"){
+    const team = getColloquiumTeam(participantId);
+    const memberIds = team ? team.memberIds : [participantId];
+    for(const id of memberIds){
+      const m = STATE.participants[id];
+      if(m && m.events.includes(eventId) && !m.checkins[eventId]){
+        await checkInParticipant(id, eventId);
+      }
+    }
+  } else {
+    await checkInParticipant(participantId, eventId);
+  }
   document.getElementById("scanCandidateCard").classList.remove("show");
   document.getElementById("manualScanId").value = "";
   if(scanModal.classList.contains("show")) startScanner();
@@ -2322,9 +2464,30 @@ function adminEventCardHTML(ev, compact){
 
       <div class="field">
         <label>Winners</label>
-        ${ev.winners.map((w,i)=>`
-          <input type="text" data-role="winner" data-idx="${i}" value="${w}" placeholder="${winnerPlaceLabel(i)} — e.g. Team Firewall" style="margin-bottom:8px;">
-        `).join("")}
+        ${ev.id==="colloquium" ? `
+          <p class="doc-note" style="margin-top:0;">Set by scanning a team member's QR — scanning anyone on a team fills the whole team in for that place.</p>
+          ${ev.winners.map((members,i)=>{
+            const names = (members||[]).filter(n=>n && n.trim());
+            return `
+              <div class="winner-slot">
+                <div class="winner-slot-head">
+                  <span>${winnerPlaceLabel(i)}</span>
+                  <button type="button" class="qr-btn-mini" data-scan-winner="${i}">📷 Scan team to set</button>
+                </div>
+                <div class="winner-slot-value">${names.length ? names.join(", ") : '<span class="doc-missing">Not set</span>'}</div>
+              </div>
+            `;
+          }).join("")}
+        ` : `
+          ${ev.winners.map((members,i)=>`
+            <div class="winner-slot">
+              <div class="winner-slot-head"><span>${winnerPlaceLabel(i)} (up to 3 members)</span></div>
+              <div class="grid-3-inline">
+                ${[0,1,2].map(j=>`<input type="text" data-role="winner" data-place="${i}" data-slot="${j}" value="${(members&&members[j])||''}" placeholder="Member ${j+1}">`).join("")}
+              </div>
+            </div>
+          `).join("")}
+        `}
       </div>
 
       <div class="field">
@@ -2446,6 +2609,10 @@ function wireEventCard(eventId, fromMain){
     scanBtn.addEventListener("click", ()=>openScanModal(eventId));
   }
 
+  scope.querySelectorAll('[data-scan-winner]').forEach(btn=>{
+    btn.addEventListener("click", ()=>openScanModalForWinner(Number(btn.dataset.scanWinner)));
+  });
+
   const countEl = scope.querySelector('[data-role="countVal"]');
   scope.querySelector('[data-role="dec"]').addEventListener("click", ()=>{
     ev.checkedIn = Math.max(0, ev.checkedIn - 1);
@@ -2495,7 +2662,16 @@ function wireEventCard(eventId, fromMain){
     ev.room = scope.querySelector('[data-role="room"]').value.trim() || ev.room;
     ev.coordinator.name = scope.querySelector('[data-role="coordName"]').value.trim();
     ev.coordinator.phone = scope.querySelector('[data-role="coordPhone"]').value.trim();
-    ev.winners = Array.from(scope.querySelectorAll('[data-role="winner"]')).map(inp=>inp.value.trim());
+    if(ev.id !== "colloquium"){
+      const winnerInputs = Array.from(scope.querySelectorAll('[data-role="winner"]'));
+      const newWinners = ev.winners.map(()=>["","",""]);
+      winnerInputs.forEach(inp=>{
+        const place = Number(inp.dataset.place);
+        const slot = Number(inp.dataset.slot);
+        if(!isNaN(place) && !isNaN(slot) && newWinners[place]) newWinners[place][slot] = inp.value.trim();
+      });
+      ev.winners = newWinners;
+    }
     ev.feedbackUrl = scope.querySelector('[data-role="feedback"]').value.trim();
 
     const roundsEnabledInput = scope.querySelector('[data-role="roundsEnabled"]');
@@ -2540,45 +2716,96 @@ function eventAdminHTML(ev){
     </div>
     <div class="admin-section">
       <h3>Registered participants</h3>
-      <p class="sub">Everyone registered for this event, and their check-in status.</p>
-      <div id="eventParticipantTableWrap"></div>
+      <p class="sub">Everyone registered for this event, split by check-in status.${ev.id==="colloquium" ? " Checked-in participants are grouped by team." : ""}</p>
+      <div class="admin-event-card">
+        <h4>✅ Checked in</h4>
+        <div id="eventCheckedInWrap"></div>
+      </div>
+      <div class="admin-event-card">
+        <h4>⏳ Not checked in</h4>
+        <div id="eventNotCheckedInWrap"></div>
+      </div>
     </div>
   `;
 }
 function wireEventAdmin(eventId){
   wireEventCard(eventId, false);
-  renderEventParticipantList(eventId);
+  renderEventParticipantLists(eventId);
 }
 
-function renderEventParticipantList(eventId){
-  const wrap = document.getElementById("eventParticipantTableWrap");
-  if(!wrap) return;
-  const showDocs = DOC_EVENTS.includes(eventId);
-  const list = Object.values(STATE.participants)
-    .filter(p=>p.events.includes(eventId))
-    .sort((a,b)=> new Date(b.registeredAt) - new Date(a.registeredAt));
-  if(list.length===0){
-    wrap.innerHTML = '<p class="announce-empty">No one has registered for this event yet.</p>';
-    return;
-  }
-  wrap.innerHTML = `
+function participantsMiniTableHTML(list, eventId, showCheckinBtn, showDocs){
+  return `
     <table class="participant-table">
-      <thead><tr><th>Name</th><th>Phone</th><th>ID</th><th>Status</th>${showDocs ? '<th>Document</th>' : ''}<th></th></tr></thead>
+      <thead><tr><th>Name</th><th>Phone</th><th>ID</th>${showDocs ? '<th>Document</th>' : ''}${showCheckinBtn ? '<th></th>' : ''}</tr></thead>
       <tbody>
         ${list.map(p=>`
           <tr>
             <td>${p.name}</td>
             <td>${p.phone}</td>
             <td class="pid">${p.id}</td>
-            <td><span class="event-chip ${p.checkins[eventId] ? 'checked' : 'pending'}">${p.checkins[eventId] ? 'Checked in ✓' : 'Not checked in'}</span></td>
             ${showDocs ? `<td>${participantDocCellHTML(p)}</td>` : ''}
-            <td>${p.checkins[eventId] ? '' : `<button type="button" class="qr-btn-mini" data-quick-checkin="${p.id}">Check in</button>`}</td>
+            ${showCheckinBtn ? `<td><button type="button" class="qr-btn-mini" data-quick-checkin="${p.id}">Check in</button></td>` : ''}
           </tr>
         `).join("")}
       </tbody>
     </table>
   `;
-  wrap.querySelectorAll("[data-quick-checkin]").forEach(btn=>{
+}
+
+function participantDocCellHTMLForTeam(team){
+  const doc = team.document;
+  if(!doc) return '<span class="doc-missing">Not uploaded</span>';
+  return `
+    ${team.title ? `<div style="font-size:11px; color:var(--ink-faint); margin-bottom:4px;">${team.title}</div>` : ``}
+    <div class="btn-row" style="gap:6px; margin:0;">
+      <a class="qr-btn-mini" href="${doc.dataUrl}" target="_blank" rel="noopener">View</a>
+      <a class="qr-btn-mini" href="${doc.dataUrl}" download="${team.memberIds[0]}${docExtension(doc.fileName)}">Download</a>
+    </div>
+  `;
+}
+
+function renderEventParticipantLists(eventId){
+  const checkedWrap = document.getElementById("eventCheckedInWrap");
+  const notCheckedWrap = document.getElementById("eventNotCheckedInWrap");
+  if(!checkedWrap || !notCheckedWrap) return;
+  const showDocs = DOC_EVENTS.includes(eventId);
+  const isTeamEvent = eventId === "colloquium";
+  const all = Object.values(STATE.participants)
+    .filter(p=>p.events.includes(eventId))
+    .sort((a,b)=> new Date(b.registeredAt) - new Date(a.registeredAt));
+  const checkedIn = all.filter(p=>p.checkins[eventId]);
+  const notCheckedIn = all.filter(p=>!p.checkins[eventId]);
+
+  if(checkedIn.length===0){
+    checkedWrap.innerHTML = '<p class="announce-empty">No one checked in yet.</p>';
+  } else if(isTeamEvent){
+    const seen = new Set();
+    const blocks = [];
+    checkedIn.forEach(p=>{
+      const team = getColloquiumTeam(p.id);
+      const teamKey = team ? team.id : "solo-"+p.id;
+      if(seen.has(teamKey)) return;
+      seen.add(teamKey);
+      const memberIds = team ? team.memberIds : [p.id];
+      const members = memberIds.map(id=>STATE.participants[id]).filter(Boolean).filter(m=>m.checkins[eventId]);
+      blocks.push({team, members});
+    });
+    checkedWrap.innerHTML = blocks.map(b=>`
+      <div class="team-block">
+        <div class="team-block-members">${b.members.map(m=>`<span class="event-chip checked">${m.name} <span class="pid" style="margin-left:4px;">${m.id}</span></span>`).join("")}</div>
+        ${showDocs ? `<div style="margin-top:6px;">${b.team ? participantDocCellHTMLForTeam(b.team) : '<span class="doc-missing">Not uploaded</span>'}</div>` : ``}
+      </div>
+    `).join("");
+  } else {
+    checkedWrap.innerHTML = participantsMiniTableHTML(checkedIn, eventId, false, showDocs);
+  }
+
+  if(notCheckedIn.length===0){
+    notCheckedWrap.innerHTML = '<p class="announce-empty">Everyone registered has checked in.</p>';
+  } else {
+    notCheckedWrap.innerHTML = participantsMiniTableHTML(notCheckedIn, eventId, true, showDocs);
+  }
+  notCheckedWrap.querySelectorAll("[data-quick-checkin]").forEach(btn=>{
     btn.addEventListener("click", ()=>checkInParticipant(btn.dataset.quickCheckin, eventId));
   });
 }
