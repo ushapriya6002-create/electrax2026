@@ -505,6 +505,26 @@ footer{border-top:1px solid var(--line); padding:28px 24px; text-align:center; c
 .scan-candidate-row:last-of-type{border-bottom:none;}
 .scan-candidate-row .label{color:var(--ink-faint);}
 
+/* ---------- public: find your events + document upload ---------- */
+.my-events-greeting{font-size:14px; margin:2px 0 16px;}
+.my-events-list{display:flex; flex-direction:column; gap:16px;}
+.my-event-block{display:flex; flex-direction:column; gap:0;}
+.doc-upload-card{
+  border:1px solid var(--line); border-top:none; border-radius:0 0 var(--radius) var(--radius);
+  background:var(--bg-panel); padding:16px 18px; margin-top:-1px;
+}
+.doc-upload-head{display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:13px; font-weight:500; margin-bottom:10px;}
+.doc-optional-tag{font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-faint); border:1px solid var(--line); padding:2px 8px; border-radius:999px;}
+.doc-current{display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:12.5px; margin-bottom:8px; flex-wrap:wrap;}
+.doc-note{font-size:11px; color:var(--ink-faint); margin-top:8px; line-height:1.5;}
+.doc-missing{color:var(--ink-faint); font-style:italic;}
+.doc-team-note{font-size:11.5px; color:var(--ink-faint); margin-bottom:10px;}
+
+/* ---------- check-in: team panel ---------- */
+.scan-team-section{margin-top:12px; padding-top:12px; border-top:1px dashed var(--line);}
+.scan-team-members{display:flex; flex-wrap:wrap; gap:6px;}
+.scan-team-chip{border:1px solid var(--line); border-radius:999px; padding:3px 10px; font-size:12px;}
+
 /* ---------- app loading / sync state ---------- */
 #appLoading{
   position:fixed; inset:0; z-index:500; background:var(--bg);
@@ -586,11 +606,17 @@ footer{border-top:1px solid var(--line); padding:28px 24px; text-align:center; c
 
   <section class="section" style="padding-top:0; padding-bottom:0;">
     <div class="section-head">
-      <h2>Venue Map</h2>
+      <h2>Find Your Events</h2>
       <div class="hr-gold"></div>
     </div>
-    <p style="color:var(--ink-faint); font-size:12.5px; margin:-10px 0 18px;">Schematic layout only — tap a room to jump to that event.</p>
-    <div class="map-board" id="mapBoard"></div>
+    <p style="color:var(--ink-faint); font-size:12.5px; margin:-10px 0 18px;">Scan your registration QR code to see only the events you've signed up for.</p>
+    <div class="admin-event-card">
+      <div class="btn-row">
+        <button class="btn" id="myEventsScanBtn" style="flex:1;">📷 Scan my QR code</button>
+      </div>
+      <p class="modal-error" id="myEventsMsg" style="display:none;"></p>
+      <div id="myEventsResults"></div>
+    </div>
   </section>
 
   <div class="lunch-banner" id="lunchBanner">
@@ -687,6 +713,21 @@ footer{border-top:1px solid var(--line); padding:28px 24px; text-align:center; c
       <div class="scan-candidate-row"><span class="label">Phone</span><span id="scanCandidatePhone"></span></div>
       <div class="scan-candidate-row"><span class="label">ID</span><span id="scanCandidateId" style="font-family:monospace;"></span></div>
       <div class="scan-candidate-row"><span class="label">Registered for</span><span id="scanCandidateEvents"></span></div>
+      <div class="scan-candidate-row" id="scanCandidateDocRow" style="display:none;"><span class="label">Document</span><span id="scanCandidateDoc"></span></div>
+      <div class="scan-team-section" id="scanTeamSection" style="display:none;">
+        <div class="scan-team-members" id="scanTeamMembers"></div>
+        <div class="btn-row" style="margin-top:8px;">
+          <input type="text" id="scanTeamAddInput" placeholder="Teammate's participant ID" style="flex:1; font-family:monospace;">
+          <button class="btn secondary" id="scanTeamAddBtn">+ Add</button>
+        </div>
+        <div class="field" style="margin-top:10px;">
+          <label>Team presentation title</label>
+          <div class="btn-row">
+            <input type="text" id="scanTeamTitleInput" placeholder="Type the presentation title" style="flex:1;">
+            <button class="btn secondary" id="scanTeamTitleSaveBtn">Save</button>
+          </div>
+        </div>
+      </div>
       <div class="btn-row">
         <button class="btn" id="confirmCheckinBtn" style="flex:1;">✅ Check in</button>
         <button class="btn secondary" id="cancelCandidateBtn">Scan next</button>
@@ -732,6 +773,20 @@ footer{border-top:1px solid var(--line); padding:28px 24px; text-align:center; c
     <div class="btn-row">
       <button class="btn" id="saveEditParticipantBtn" style="flex:1;">Save changes</button>
       <button class="btn danger" id="deleteEditParticipantBtn">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== MY EVENTS SCAN MODAL (public) ===================== -->
+<div class="modal-backdrop" id="myEventsScanModal">
+  <div class="modal">
+    <button class="modal-close" id="closeMyEventsScanModal" aria-label="Close">&times;</button>
+    <h3>Scan your QR code</h3>
+    <p class="sub">Point the camera at the QR code you were given at registration.</p>
+    <div id="myEventsQrReader" style="width:100%; border-radius:var(--radius); overflow:hidden;"></div>
+    <p class="modal-error" id="myEventsScanError" style="display:none;"></p>
+    <div class="btn-row" style="margin-top:10px;">
+      <button class="btn secondary" id="myEventsScanRetryBtn" style="flex:1;">Try again</button>
     </div>
   </div>
 </div>
@@ -839,7 +894,8 @@ function defaultState(){
         shortfilm:{username:"shortfilm", password:"ece2026"}
       }
     },
-    participants:{}
+    participants:{},
+    teams:{}
   };
 }
 
@@ -873,11 +929,22 @@ let announceSeq = 2;
 let EVENT_START = new Date("2026-09-12T09:00:00");
 let stateLoaded = false;
 
-/* Schematic venue map layout — purely a visual index, not to scale. */
-const MAP_LAYOUT = [
-  {zone:"Technical Wing", ids:["colloquium","circuitry","quiz"]},
-  {zone:"Activity Wing", ids:["clues","freefire","shortfilm"]}
-];
+/* Events that require the participant to upload a document (e.g. slides). */
+const DOC_EVENTS = ["colloquium"];
+const TEAM_EVENT_MAX_MEMBERS = 3;
+
+function getColloquiumTeam(participantId){
+  return Object.values(STATE.teams || {}).find(t=>t.eventId==="colloquium" && t.memberIds.includes(participantId)) || null;
+}
+function getOrCreateColloquiumTeam(participantId){
+  let team = getColloquiumTeam(participantId);
+  if(team) return team;
+  STATE.teams = STATE.teams || {};
+  const id = "TEAM-" + participantId;
+  team = {id, eventId:"colloquium", memberIds:[participantId], title:"", document:null};
+  STATE.teams[id] = team;
+  return team;
+}
 
 /* ---------- merge saved data onto current defaults so new
    fields (like startTime) always exist even for old saves ---------- */
@@ -928,6 +995,7 @@ function mergeState(loaded){
     }
   }
   base.participants = (loaded.participants && typeof loaded.participants === "object") ? loaded.participants : {};
+  base.teams = (loaded.teams && typeof loaded.teams === "object") ? loaded.teams : {};
   return base;
 }
 
@@ -1139,42 +1207,185 @@ function renderLunchBanner(){
   document.getElementById("lunchBanner").classList.toggle("show", STATE.lunch);
 }
 
-function renderMap(){
-  const board = document.getElementById("mapBoard");
-  board.innerHTML = MAP_LAYOUT.map(zone=>`
-    <div class="map-zone">
-      <div class="map-zone-label">${zone.zone}</div>
-      <div class="map-rooms">
-        ${zone.ids.map(id=>{
-          const ev = STATE.events[id];
-          return `
-            <button type="button" class="map-room" data-jump="${id}">
-              <div class="room-no">${ev.room}</div>
-              <div class="room-venue">${ev.venue}</div>
-              <div class="room-event">${ev.name}</div>
-            </button>
-          `;
-        }).join("")}
-      </div>
-    </div>
-  `).join("");
-  board.querySelectorAll("[data-jump]").forEach(btn=>{
-    btn.addEventListener("click", ()=>{
-      const card = document.querySelector(`.event-card[data-event="${btn.dataset.jump}"]`);
-      if(!card) return;
-      card.scrollIntoView({behavior:"smooth", block:"center"});
-      card.classList.add("pulse-highlight");
-      setTimeout(()=>card.classList.remove("pulse-highlight"), 1000);
-    });
-  });
+function renderMyEventsCard(){
+  // Re-render the currently looked-up participant's card set, if any, so
+  // status/photo/schedule changes reflect immediately without a rescan.
+  if(currentMyEventsParticipantId && STATE.participants[currentMyEventsParticipantId]){
+    renderMyEvents(STATE.participants[currentMyEventsParticipantId]);
+  }
 }
 
 function renderPublic(){
   renderAnnouncements();
   renderEvents();
   renderLunchBanner();
-  renderMap();
+  renderMyEventsCard();
 }
+
+/* ---------- public: find your events + document upload ---------- */
+let currentMyEventsParticipantId = null;
+
+function docExtension(fileName){
+  const m = /\.[^.]+$/.exec(fileName || "");
+  return m ? m[0] : "";
+}
+
+function documentUploadWidgetHTML(ev, p){
+  const team = getColloquiumTeam(p.id);
+  const doc = team ? team.document : null;
+  const title = team ? team.title : "";
+  const teammates = team ? team.memberIds.filter(id=>id!==p.id).map(id=>STATE.participants[id]).filter(Boolean) : [];
+  return `
+    <div class="doc-upload-card">
+      <div class="doc-upload-head">
+        <span>📄 ${ev.name} — presentation</span>
+        <span class="doc-optional-tag">File optional</span>
+      </div>
+      ${teammates.length ? `<p class="doc-team-note">Team: you${teammates.map(m=>", "+m.name).join("")} — whoever uploads covers the whole team.</p>` : ``}
+      ${doc ? `
+        <div class="doc-current">
+          <span>✅ <b>${title}</b> — ${doc.fileName}</span>
+          <a class="qr-btn-mini" href="${doc.dataUrl}" download="${p.id}${docExtension(doc.fileName)}">Download</a>
+        </div>
+      ` : title ? `<p class="doc-current"><b>${title}</b> — no file uploaded yet</p>` : ``}
+      <div class="field">
+        <label>Presentation title <span style="color:var(--ember);">*</span> — required to upload a file</label>
+        <input type="text" data-role="docTitleInput" value="${title}" placeholder="Title of your presentation">
+      </div>
+      <label class="file-upload-label">
+        ${doc ? "🔄 Replace file" : "⬆️ Upload file"}
+        <input type="file" data-role="docFile" data-event-doc="${ev.id}" accept=".pdf,.ppt,.pptx,.doc,.docx,image/*">
+      </label>
+      <span class="upload-progress" data-role="docUploadProgress"></span>
+      <p class="doc-note">A title is required before uploading. The file itself isn't compulsory — only needed if you haven't already shared it with the coordinator another way. PDF, PPT or Word, up to 15&nbsp;MB.</p>
+    </div>
+  `;
+}
+
+function wireMyEventsDocUploads(participantId){
+  document.querySelectorAll('#myEventsResults [data-role="docFile"]').forEach(input=>{
+    input.addEventListener("change", async (e)=>{
+      const file = e.target.files[0];
+      if(!file) return;
+      const card = input.closest(".doc-upload-card");
+      const titleInput = card.querySelector('[data-role="docTitleInput"]');
+      const title = titleInput ? titleInput.value.trim() : "";
+      if(!title){
+        toast("Please enter your presentation title before uploading");
+        e.target.value = "";
+        if(titleInput) titleInput.focus();
+        return;
+      }
+      const eventId = input.dataset.eventDoc;
+      const progressEl = card.querySelector('[data-role="docUploadProgress"]');
+      if(file.size > 15*1024*1024){
+        toast("That file is too large — please keep it under 15 MB");
+        e.target.value = "";
+        return;
+      }
+      progressEl.classList.add("show");
+      progressEl.textContent = "Uploading…";
+      try{
+        const dataUrl = await new Promise((resolve, reject)=>{
+          const reader = new FileReader();
+          reader.onload = ev2=>resolve(ev2.target.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        const p = STATE.participants[participantId];
+        if(!p){ toast("Couldn't find your registration — please scan again"); return; }
+        const team = getOrCreateColloquiumTeam(participantId);
+        team.title = title;
+        team.document = {fileName:file.name, dataUrl, uploadedAt:new Date().toISOString(), uploadedBy:participantId};
+        await saveState();
+        toast("Document uploaded");
+        renderMyEvents(p);
+      }catch(err){
+        toast("Couldn't upload that file — please try again");
+      }finally{
+        progressEl.classList.remove("show");
+        progressEl.textContent = "";
+      }
+    });
+  });
+}
+
+function renderMyEvents(p){
+  currentMyEventsParticipantId = p.id;
+  const wrap = document.getElementById("myEventsResults");
+  const msg = document.getElementById("myEventsMsg");
+  msg.style.display = "none";
+  const events = p.events.map(eid=>STATE.events[eid]).filter(Boolean);
+  wrap.innerHTML = `
+    <p class="my-events-greeting">Hi <b>${p.name}</b> — here ${events.length===1 ? "is your event" : "are your events"}:</p>
+    <div class="my-events-list">
+      ${events.map(ev=>`
+        <div class="my-event-block">
+          ${eventCardHTML(ev)}
+          ${DOC_EVENTS.includes(ev.id) ? documentUploadWidgetHTML(ev, p) : ""}
+        </div>
+      `).join("")}
+    </div>
+  `;
+  wireMyEventsDocUploads(p.id);
+}
+
+function lookupMyEvents(idRaw){
+  const id = (idRaw||"").trim();
+  const msg = document.getElementById("myEventsMsg");
+  const wrap = document.getElementById("myEventsResults");
+  if(!id){
+    msg.style.display = "block";
+    msg.textContent = "Scan your QR code to see your events.";
+    wrap.innerHTML = "";
+    currentMyEventsParticipantId = null;
+    return;
+  }
+  const p = STATE.participants[id];
+  if(!p){
+    msg.style.display = "block";
+    msg.textContent = "❌ No registration found with that ID — check with the registration desk.";
+    wrap.innerHTML = "";
+    currentMyEventsParticipantId = null;
+    return;
+  }
+  renderMyEvents(p);
+}
+
+let myEventsScanner = null;
+const myEventsScanModal = document.getElementById("myEventsScanModal");
+function openMyEventsScanModal(){
+  myEventsScanModal.classList.add("show");
+  document.getElementById("myEventsScanError").style.display = "none";
+  if(typeof Html5Qrcode === "undefined") return;
+  myEventsScanner = new Html5Qrcode("myEventsQrReader");
+  myEventsScanner.start(
+    {facingMode:"environment"},
+    {fps:10, qrbox:220},
+    (decodedText)=>{
+      const value = decodedText.trim();
+      closeMyEventsScanModal();
+      lookupMyEvents(value);
+    },
+    ()=>{}
+  ).catch(()=>{
+    const err = document.getElementById("myEventsScanError");
+    err.style.display = "block";
+    err.textContent = "Couldn't access the camera. Please allow camera access and try again, or check with the registration desk.";
+  });
+}
+function closeMyEventsScanModal(){
+  myEventsScanModal.classList.remove("show");
+  if(myEventsScanner){
+    const s = myEventsScanner;
+    myEventsScanner = null;
+    s.stop().then(()=>s.clear()).catch(()=>{});
+  }
+}
+document.getElementById("myEventsScanBtn").addEventListener("click", openMyEventsScanModal);
+document.getElementById("myEventsScanRetryBtn").addEventListener("click", openMyEventsScanModal);
+document.getElementById("closeMyEventsScanModal").addEventListener("click", closeMyEventsScanModal);
+myEventsScanModal.addEventListener("click", (e)=>{ if(e.target===myEventsScanModal) closeMyEventsScanModal(); });
 
 /* ---------- live countdowns ---------- */
 function updateCountdown(){
@@ -1278,6 +1489,20 @@ function generateParticipantId(){
   return id;
 }
 
+function participantDocCellHTML(p){
+  if(!p.events.includes("colloquium")) return "—";
+  const team = getColloquiumTeam(p.id);
+  const doc = team ? team.document : null;
+  if(!doc) return '<span class="doc-missing">Not uploaded</span>';
+  return `
+    ${team.title ? `<div style="font-size:11px; color:var(--ink-faint); margin-bottom:4px;">${team.title}</div>` : ``}
+    <div class="btn-row" style="gap:6px; margin:0;">
+      <a class="qr-btn-mini" href="${doc.dataUrl}" target="_blank" rel="noopener">View</a>
+      <a class="qr-btn-mini" href="${doc.dataUrl}" download="${p.id}${docExtension(doc.fileName)}">Download</a>
+    </div>
+  `;
+}
+
 function renderParticipantTable(filter){
   const wrap = document.getElementById("participantTableWrap");
   if(!wrap) return;
@@ -1291,7 +1516,7 @@ function renderParticipantTable(filter){
   }
   wrap.innerHTML = `
     <table class="participant-table">
-      <thead><tr><th>Name</th><th>Phone</th><th>ID</th><th>Events</th><th></th></tr></thead>
+      <thead><tr><th>Name</th><th>Phone</th><th>ID</th><th>Events</th><th>PPT</th><th></th></tr></thead>
       <tbody>
         ${filtered.map(p=>`
           <tr>
@@ -1305,6 +1530,7 @@ function renderParticipantTable(filter){
                 `).join("")}
               </div>
             </td>
+            <td>${participantDocCellHTML(p)}</td>
             <td>
               <div class="btn-row" style="gap:6px; margin:0;">
                 <button type="button" class="qr-btn-mini" data-view-qr="${p.id}">View QR</button>
@@ -1433,6 +1659,11 @@ async function deleteParticipant(participantId){
       STATE.events[eid].checkedIn = Math.max(0, (STATE.events[eid].checkedIn||0) - 1);
     }
   });
+  const team = getColloquiumTeam(participantId);
+  if(team){
+    team.memberIds = team.memberIds.filter(id=>id!==participantId);
+    if(team.memberIds.length===0) delete STATE.teams[team.id];
+  }
   delete STATE.participants[participantId];
   await saveState();
   toast(p.name + " was removed");
@@ -1537,9 +1768,70 @@ function showScanCandidate(participantId, eventId){
   document.getElementById("scanCandidatePhone").textContent = p.phone;
   document.getElementById("scanCandidateId").textContent = p.id;
   document.getElementById("scanCandidateEvents").textContent = p.events.map(eid=>STATE.events[eid]?STATE.events[eid].name:eid).join(", ");
+  const docRow = document.getElementById("scanCandidateDocRow");
+  if(DOC_EVENTS.includes(eventId)){
+    const team = getColloquiumTeam(participantId);
+    const doc = team ? team.document : null;
+    document.getElementById("scanCandidateDoc").innerHTML = doc
+      ? `<a class="qr-btn-mini" href="${doc.dataUrl}" target="_blank" rel="noopener">View</a> <a class="qr-btn-mini" href="${doc.dataUrl}" download="${participantId}${docExtension(doc.fileName)}">Download</a>`
+      : '<span class="doc-missing">Not uploaded (not compulsory)</span>';
+    docRow.style.display = "flex";
+  } else {
+    docRow.style.display = "none";
+  }
+  refreshScanTeamSection(participantId, eventId);
   card.classList.add("show");
   stopScanner();
 }
+
+function refreshScanTeamSection(participantId, eventId){
+  const section = document.getElementById("scanTeamSection");
+  if(eventId !== "colloquium"){ section.style.display = "none"; return; }
+  section.style.display = "block";
+  const team = getColloquiumTeam(participantId);
+  const memberIds = team ? team.memberIds : [participantId];
+  document.getElementById("scanTeamMembers").innerHTML = memberIds.map(id=>{
+    const m = STATE.participants[id];
+    return `<span class="scan-team-chip">${m ? m.name : id}</span>`;
+  }).join("");
+  document.getElementById("scanTeamTitleInput").value = team ? team.title : "";
+  document.getElementById("scanTeamAddInput").value = "";
+  const addBtn = document.getElementById("scanTeamAddBtn");
+  addBtn.disabled = memberIds.length >= TEAM_EVENT_MAX_MEMBERS;
+  addBtn.textContent = memberIds.length >= TEAM_EVENT_MAX_MEMBERS ? `Team full (${TEAM_EVENT_MAX_MEMBERS} max)` : "+ Add";
+}
+
+document.getElementById("scanTeamAddBtn").addEventListener("click", async ()=>{
+  if(!pendingCheckin) return;
+  const {participantId, eventId} = pendingCheckin;
+  if(eventId !== "colloquium") return;
+  const newId = document.getElementById("scanTeamAddInput").value.trim();
+  if(!newId){ toast("Enter the teammate's participant ID"); return; }
+  const mate = STATE.participants[newId];
+  if(!mate){ toast("No participant found with that ID"); return; }
+  if(!mate.events.includes("colloquium")){ toast(mate.name + " isn't registered for this event"); return; }
+  const team = getOrCreateColloquiumTeam(participantId);
+  if(team.memberIds.includes(newId)){ toast(mate.name + " is already on this team"); return; }
+  const mateTeam = getColloquiumTeam(newId);
+  if(mateTeam && mateTeam.id !== team.id){ toast(mate.name + " is already on another team"); return; }
+  if(team.memberIds.length >= TEAM_EVENT_MAX_MEMBERS){ toast(`A team can have at most ${TEAM_EVENT_MAX_MEMBERS} members`); return; }
+  team.memberIds.push(newId);
+  await saveState();
+  toast(mate.name + " added to the team");
+  refreshScanTeamSection(participantId, eventId);
+});
+
+document.getElementById("scanTeamTitleSaveBtn").addEventListener("click", async ()=>{
+  if(!pendingCheckin) return;
+  const {participantId, eventId} = pendingCheckin;
+  if(eventId !== "colloquium") return;
+  const title = document.getElementById("scanTeamTitleInput").value.trim();
+  if(!title){ toast("Enter a presentation title"); return; }
+  const team = getOrCreateColloquiumTeam(participantId);
+  team.title = title;
+  await saveState();
+  toast("Presentation title saved");
+});
 
 document.getElementById("confirmCheckinBtn").addEventListener("click", async ()=>{
   if(!pendingCheckin) return;
@@ -2261,6 +2553,7 @@ function wireEventAdmin(eventId){
 function renderEventParticipantList(eventId){
   const wrap = document.getElementById("eventParticipantTableWrap");
   if(!wrap) return;
+  const showDocs = DOC_EVENTS.includes(eventId);
   const list = Object.values(STATE.participants)
     .filter(p=>p.events.includes(eventId))
     .sort((a,b)=> new Date(b.registeredAt) - new Date(a.registeredAt));
@@ -2270,7 +2563,7 @@ function renderEventParticipantList(eventId){
   }
   wrap.innerHTML = `
     <table class="participant-table">
-      <thead><tr><th>Name</th><th>Phone</th><th>ID</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>Name</th><th>Phone</th><th>ID</th><th>Status</th>${showDocs ? '<th>Document</th>' : ''}<th></th></tr></thead>
       <tbody>
         ${list.map(p=>`
           <tr>
@@ -2278,6 +2571,7 @@ function renderEventParticipantList(eventId){
             <td>${p.phone}</td>
             <td class="pid">${p.id}</td>
             <td><span class="event-chip ${p.checkins[eventId] ? 'checked' : 'pending'}">${p.checkins[eventId] ? 'Checked in ✓' : 'Not checked in'}</span></td>
+            ${showDocs ? `<td>${participantDocCellHTML(p)}</td>` : ''}
             <td>${p.checkins[eventId] ? '' : `<button type="button" class="qr-btn-mini" data-quick-checkin="${p.id}">Check in</button>`}</td>
           </tr>
         `).join("")}
