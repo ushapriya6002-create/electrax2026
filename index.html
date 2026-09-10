@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+A<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -18,7 +18,7 @@
   --gold-dim:#C99A3E;
   --spark:#5CC8E8;
   --ember:#DD6B33;
-  --ok:#6FB566;
+  --ok:#6FB566;A
   --danger:#D1553F;
   --line:#3A2F22;
   --radius:3px;
@@ -789,7 +789,7 @@ footer{border-top:1px solid var(--line); padding:28px 24px; text-align:center; c
     </div>
     <div class="field">
       <label for="editCollege">College name</label>
-      <input type="text" id="editCollege">
+      <input type="text" id="editCollege" list="collegeDatalist" placeholder="Choose from the list or type a college name" autocomplete="off">
     </div>
     <div class="field">
       <label>Events (choose up to 3)</label>
@@ -815,6 +815,15 @@ footer{border-top:1px solid var(--line); padding:28px 24px; text-align:center; c
     </div>
   </div>
 </div>
+
+<!-- ===================== PRELOADED COLLEGE NAMES =====================
+     Powers the "College name" field on the registration form and the
+     edit-participant modal: typing shows matching suggestions, but any
+     name can still be typed in freely (it's not restricted to this list).
+     The list itself lives in STATE.colleges and is managed from the
+     "Manage preloaded colleges" card on the main admin and registration
+     admin pages — this element is just populated by renderCollegeDatalist(). -->
+<datalist id="collegeDatalist"></datalist>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
@@ -850,6 +859,12 @@ function defaultState(){
   return {
     lunch:false,
     soundEnabled:true,
+    colleges:[
+      "Roever Engineering College",
+      "Roever College of Engineering & Technology",
+      "Roever Institute of Technology",
+      "Roever College of Management"
+    ],
     announcements:[
       {id:1, time:"09:00 AM", text:"Welcome to ELECTRAX'26! Registration is open at the ECE block lobby."}
     ],
@@ -980,6 +995,7 @@ function mergeState(loaded){
   if(!loaded || typeof loaded !== "object") return base;
   base.lunch = typeof loaded.lunch === "boolean" ? loaded.lunch : base.lunch;
   base.soundEnabled = typeof loaded.soundEnabled === "boolean" ? loaded.soundEnabled : base.soundEnabled;
+  if(Array.isArray(loaded.colleges)) base.colleges = loaded.colleges;
   if(Array.isArray(loaded.announcements)) base.announcements = loaded.announcements;
   if(loaded.events){
     Object.keys(base.events).forEach(id=>{
@@ -1053,6 +1069,16 @@ async function loadState(){
   announceSeq = maxId + 1;
   EVENT_START = computeEventStart();
   stateLoaded = true;
+  renderCollegeDatalist();
+}
+
+function escapeAttr(str){
+  return String(str).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+function renderCollegeDatalist(){
+  const dl = document.getElementById("collegeDatalist");
+  if(!dl) return;
+  dl.innerHTML = STATE.colleges.map(c=>`<option value="${escapeAttr(c)}">`).join("");
 }
 
 async function saveState(){
@@ -1615,11 +1641,18 @@ function downloadCSV(filename, rows){
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
-function downloadParticipantsCSV(list, filename){
-  const rows = [["Name","Phone","College","ID","Events","Checked-in status"]];
+function downloadParticipantsCSV(list, filename, includeTitle){
+  const head = ["Name","Phone","College","ID","Events","Checked-in status"];
+  if(includeTitle) head.push("Presentation title");
+  const rows = [head];
   list.forEach(p=>{
     const eventStatus = p.events.map(eid=>`${STATE.events[eid]?STATE.events[eid].name:eid}: ${p.checkins[eid]?"checked in":"not checked in"}`).join(" | ");
-    rows.push([p.name, csvForceText(p.phone), p.college||"", csvForceText(p.id), p.events.join(", "), eventStatus]);
+    const row = [p.name, csvForceText(p.phone), p.college||"", csvForceText(p.id), p.events.map(eid=>STATE.events[eid]?STATE.events[eid].name:eid).join(", "), eventStatus];
+    if(includeTitle){
+      const team = getColloquiumTeam(p.id);
+      row.push(team ? (team.title || "") : "");
+    }
+    rows.push(row);
   });
   downloadCSV(filename, rows);
 }
@@ -1671,14 +1704,18 @@ function drawSimplePdfTable(doc, head, body, startY){
   function paintRow(cells, linesPerCell, height, isHeader){
     doc.setFontSize(7.5);
     doc.setDrawColor(180,180,180);
-    if(isHeader){ doc.setFillColor(40,40,40); doc.setTextColor(255,255,255); doc.setFont(undefined,"bold"); }
-    else { doc.setFillColor(255,255,255); doc.setTextColor(20,20,20); doc.setFont(undefined,"normal"); }
+    if(isHeader){ doc.setFillColor(40,40,40); doc.setTextColor(255,255,255); doc.setFont("helvetica","bold"); }
+    else { doc.setFillColor(255,255,255); doc.setTextColor(20,20,20); doc.setFont("helvetica","normal"); }
     cells.forEach((cell,i)=>{
-      const x = marginX + i*colWidth;
-      doc.rect(x, y, colWidth, height, isHeader ? "F" : "S");
-      linesPerCell[i].forEach((line,li)=>{
-        doc.text(line, x+cellPad, y+cellPad+(li+1)*lineHeight-1);
-      });
+      try{
+        const x = marginX + i*colWidth;
+        doc.rect(x, y, colWidth, height, isHeader ? "F" : "S");
+        (linesPerCell[i] || [""]).forEach((line,li)=>{
+          doc.text(line, x+cellPad, y+cellPad+(li+1)*lineHeight-1);
+        });
+      }catch(cellErr){
+        console.error("PDF cell render failed", cellErr);
+      }
     });
     y += height;
   }
@@ -1698,11 +1735,17 @@ function drawSimplePdfTable(doc, head, body, startY){
     paintRow(row, lines, height, false);
   });
 }
-function downloadParticipantsPDF(list, title, filename){
+function downloadParticipantsPDF(list, title, filename, includeTitle){
   const head = ["Name","Phone","College","ID","Events","Checked-in status"];
+  if(includeTitle) head.push("Presentation title");
   const body = list.map(p=>{
     const eventStatus = p.events.map(eid=>`${STATE.events[eid]?STATE.events[eid].name:eid}: ${p.checkins[eid]?"checked in":"not checked in"}`).join(" | ");
-    return [p.name, p.phone, p.college||"", p.id, p.events.map(eid=>STATE.events[eid]?STATE.events[eid].name:eid).join(", "), eventStatus];
+    const row = [p.name, p.phone, p.college||"", p.id, p.events.map(eid=>STATE.events[eid]?STATE.events[eid].name:eid).join(", "), eventStatus];
+    if(includeTitle){
+      const team = getColloquiumTeam(p.id);
+      row.push(team ? (team.title || "") : "");
+    }
+    return row;
   });
   downloadPDF(title, head, body, filename);
 }
@@ -2282,6 +2325,69 @@ function renderAdmin(){
 }
 
 /* ---- main admin ---- */
+function collegesManagerHTML(){
+  return `
+    <div class="admin-section">
+      <h3>Preloaded college names</h3>
+      <p class="sub">Colleges listed here show up as suggestions in the "College name" field when registering or editing a participant. Anyone can still type a college that isn't on this list.</p>
+      <div class="admin-event-card">
+        <div class="btn-row">
+          <input type="text" id="newCollegeName" placeholder="Add a college name" style="flex:1;">
+          <button type="button" class="btn secondary" id="addCollegeBtn">Add</button>
+        </div>
+        <div id="collegeManagerList" style="margin-top:12px;"></div>
+      </div>
+    </div>
+  `;
+}
+
+function renderCollegeManagerList(){
+  const wrap = document.getElementById("collegeManagerList");
+  if(!wrap) return;
+  wrap.innerHTML = STATE.colleges.map((c,idx)=>`
+    <div class="admin-announce-item">
+      <span class="text">${escapeAttr(c)}</span>
+      <button class="mini-x" data-idx="${idx}" title="Remove">&times;</button>
+    </div>
+  `).join("") || '<p class="announce-empty">No colleges preloaded yet.</p>';
+  wrap.querySelectorAll(".mini-x").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const idx = Number(btn.dataset.idx);
+      const removed = STATE.colleges[idx];
+      STATE.colleges = STATE.colleges.filter((_,i)=>i!==idx);
+      await saveState();
+      renderCollegeDatalist();
+      renderCollegeManagerList();
+      toast(`${removed} removed`);
+    });
+  });
+}
+
+function wireCollegesManager(){
+  const addBtn = document.getElementById("addCollegeBtn");
+  if(!addBtn) return;
+  const nameInput = document.getElementById("newCollegeName");
+  const addCollege = async ()=>{
+    const name = nameInput.value.trim();
+    if(!name) return;
+    if(STATE.colleges.some(c=>c.toLowerCase()===name.toLowerCase())){
+      toast("That college is already on the list");
+      return;
+    }
+    STATE.colleges.push(name);
+    await saveState();
+    nameInput.value = "";
+    renderCollegeDatalist();
+    renderCollegeManagerList();
+    toast(`${name} added`);
+  };
+  addBtn.addEventListener("click", addCollege);
+  nameInput.addEventListener("keydown", (e)=>{
+    if(e.key === "Enter"){ e.preventDefault(); addCollege(); }
+  });
+  renderCollegeManagerList();
+}
+
 function participantsSectionHTML(){
   return `
     <div class="admin-section">
@@ -2308,7 +2414,7 @@ function participantsSectionHTML(){
         </div>
         <div class="field">
           <label for="regCollege">College name</label>
-          <input type="text" id="regCollege" placeholder="Participant's college">
+          <input type="text" id="regCollege" list="collegeDatalist" placeholder="Choose from the list or type a college name" autocomplete="off">
         </div>
         <div class="field">
           <label>Events (choose up to 3)</label>
@@ -2339,10 +2445,13 @@ function participantsSectionHTML(){
         <div id="participantTableWrap"></div>
       </div>
     </div>
+    ${collegesManagerHTML()}
   `;
 }
 
 function wireParticipantsSection(){
+  wireCollegesManager();
+
   const regChecklist = document.getElementById("regEventChecklist");
   if(regChecklist){
     regChecklist.querySelectorAll('[data-role="regEventCheck"]').forEach(cb=>{
@@ -3014,7 +3123,7 @@ function wireEventAdmin(eventId){
     allMembersCsvBtn.addEventListener("click", ()=>{
       const filter = searchInput ? searchInput.value.trim().toLowerCase() : "";
       const list = filterParticipants(filter, Object.values(STATE.participants).filter(p=>p.events.includes(eventId)));
-      downloadParticipantsCSV(list, `${eventId}-all-members.csv`);
+      downloadParticipantsCSV(list, `${eventId}-all-members.csv`, eventId==="colloquium");
     });
   }
   const allMembersPdfBtn = document.getElementById("eventAllMembersPdfBtn");
@@ -3022,7 +3131,7 @@ function wireEventAdmin(eventId){
     allMembersPdfBtn.addEventListener("click", ()=>{
       const filter = searchInput ? searchInput.value.trim().toLowerCase() : "";
       const list = filterParticipants(filter, Object.values(STATE.participants).filter(p=>p.events.includes(eventId)));
-      downloadParticipantsPDF(list, `${STATE.events[eventId].name} — all registered members`, `${eventId}-all-members.pdf`);
+      downloadParticipantsPDF(list, `${STATE.events[eventId].name} — all registered members`, `${eventId}-all-members.pdf`, eventId==="colloquium");
     });
   }
   const checkedCsvBtn = document.getElementById("eventCheckedInCsvBtn");
@@ -3030,7 +3139,7 @@ function wireEventAdmin(eventId){
     checkedCsvBtn.addEventListener("click", ()=>{
       const filter = searchInput ? searchInput.value.trim().toLowerCase() : "";
       const list = filterParticipants(filter, Object.values(STATE.participants).filter(p=>p.events.includes(eventId))).filter(p=>p.checkins[eventId]);
-      downloadParticipantsCSV(list, `${eventId}-checked-in.csv`);
+      downloadParticipantsCSV(list, `${eventId}-checked-in.csv`, eventId==="colloquium");
     });
   }
   const checkedPdfBtn = document.getElementById("eventCheckedInPdfBtn");
@@ -3038,7 +3147,7 @@ function wireEventAdmin(eventId){
     checkedPdfBtn.addEventListener("click", ()=>{
       const filter = searchInput ? searchInput.value.trim().toLowerCase() : "";
       const list = filterParticipants(filter, Object.values(STATE.participants).filter(p=>p.events.includes(eventId))).filter(p=>p.checkins[eventId]);
-      downloadParticipantsPDF(list, `${STATE.events[eventId].name} — checked in`, `${eventId}-checked-in.pdf`);
+      downloadParticipantsPDF(list, `${STATE.events[eventId].name} — checked in`, `${eventId}-checked-in.pdf`, eventId==="colloquium");
     });
   }
 
