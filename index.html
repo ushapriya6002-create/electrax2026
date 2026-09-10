@@ -1,4 +1,4 @@
-A<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -18,7 +18,7 @@ A<!DOCTYPE html>
   --gold-dim:#C99A3E;
   --spark:#5CC8E8;
   --ember:#DD6B33;
-  --ok:#6FB566;A
+  --ok:#6FB566;
   --danger:#D1553F;
   --line:#3A2F22;
   --radius:3px;
@@ -623,12 +623,20 @@ footer{border-top:1px solid var(--line); padding:28px 24px; text-align:center; c
     </div>
   </section>
 
-  <section class="section" style="padding-top:0; padding-bottom:0;">
+  <section class="section" style="padding-bottom:20px;">
     <div class="section-head">
-      <h2>Find Your Events</h2>
+      <h2>Announcements</h2>
       <div class="hr-gold"></div>
     </div>
-    <p style="color:var(--ink-faint); font-size:12.5px; margin:-10px 0 18px;">Scan your registration QR code to see only the events you've signed up for.</p>
+    <div class="announce-list" id="announceList"></div>
+  </section>
+
+  <section class="section" style="padding-top:0; padding-bottom:0;">
+    <div class="section-head">
+      <h2>Find Your Events &amp; Register</h2>
+      <div class="hr-gold"></div>
+    </div>
+    <p style="color:var(--ink-faint); font-size:12.5px; margin:-10px 0 18px;">Scan your QR code — if you're new, you'll enter your name, phone, college and events here to finish registering; if you're already registered, you'll see your events.</p>
     <div class="admin-event-card">
       <div class="btn-row">
         <button class="btn" id="myEventsScanBtn" style="flex:1;">📷 Scan my QR code</button>
@@ -645,14 +653,6 @@ footer{border-top:1px solid var(--line); padding:28px 24px; text-align:center; c
       <span>All ECE events pause now — the schedule below shows what resumes after lunch.</span>
     </div>
   </div>
-
-  <section class="section" style="padding-bottom:20px;">
-    <div class="section-head">
-      <h2>Announcements</h2>
-      <div class="hr-gold"></div>
-    </div>
-    <div class="announce-list" id="announceList"></div>
-  </section>
 
   <section class="section" style="padding-top:20px;">
     <div class="section-head">
@@ -1047,7 +1047,19 @@ function mergeState(loaded){
       });
     }
   }
-  base.participants = (loaded.participants && typeof loaded.participants === "object") ? loaded.participants : {};
+  base.participants = {};
+  if(loaded.participants && typeof loaded.participants === "object"){
+    Object.keys(loaded.participants).forEach(id=>{
+      const lp = loaded.participants[id];
+      if(!lp || typeof lp !== "object") return;
+      /* completed: true once the participant (or an admin) has filled in
+         name/phone/college/events. Older saves (from before this flag
+         existed) already have a name, so treat those as completed too —
+         only a fresh ID-only registration starts out incomplete. */
+      const completed = typeof lp.completed === "boolean" ? lp.completed : !!(lp.name && lp.name.trim());
+      base.participants[id] = Object.assign({}, lp, {completed});
+    });
+  }
   base.teams = (loaded.teams && typeof loaded.teams === "object") ? loaded.teams : {};
   return base;
 }
@@ -1410,6 +1422,167 @@ function wireMyEventsDocUploads(participantId){
   });
 }
 
+function pendingRegistrationFormHTML(p){
+  return `
+    <div class="doc-upload-card">
+      <p class="my-events-greeting" style="margin-bottom:12px;">Your code <b>${p.id}</b> is registered — finish your details below. You can only submit this once, so double-check everything first.</p>
+      <div class="grid-2">
+        <div class="field">
+          <label for="pendName">Full name</label>
+          <input type="text" id="pendName" placeholder="Your name">
+        </div>
+        <div class="field">
+          <label for="pendPhone">Phone number</label>
+          <input type="text" id="pendPhone" placeholder="10-digit number">
+        </div>
+      </div>
+      <div class="field">
+        <label for="pendCollege">College name</label>
+        <input type="text" id="pendCollege" list="collegeDatalist" placeholder="Choose from the list or type a college name" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Events (choose up to 3)</label>
+        <div class="event-checklist" id="pendEventChecklist">
+          ${Object.values(STATE.events).map(ev=>`
+            <label class="event-check-item">
+              <input type="checkbox" value="${ev.id}" data-role="pendEventCheck">
+              <span>${ev.name}</span>
+            </label>
+          `).join("")}
+        </div>
+      </div>
+      <div id="pendColloquiumFields" style="display:none;">
+        <div class="field">
+          <label>Presentation title <span style="color:var(--ember);">*</span> — required for the Research Colloquium</label>
+          <input type="text" id="pendPresTitle" placeholder="Title of your presentation">
+        </div>
+        <div class="doc-file-row">
+          <label class="file-upload-label secondary">
+            📎 Select document
+            <input type="file" id="pendPresFile" accept=".pdf,.ppt,.pptx,.doc,.docx,.odp,.odt,.rtf,.txt,.key,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+          </label>
+          <span class="doc-file-selected" id="pendPresFileName">No file selected</span>
+        </div>
+        <p class="doc-note">The file isn't compulsory — you can also upload or replace it later from this same screen. Only the presentation title is required now.</p>
+      </div>
+      <button class="btn" id="pendSubmitBtn" style="margin-top:6px;">Submit my details</button>
+    </div>
+  `;
+}
+
+function wirePendingRegistrationForm(participantId){
+  const checklist = document.getElementById("pendEventChecklist");
+  const colloquiumBox = document.getElementById("pendColloquiumFields");
+  const updateColloquiumVisibility = ()=>{
+    const checked = Array.from(checklist.querySelectorAll('[data-role="pendEventCheck"]:checked')).map(cb=>cb.value);
+    colloquiumBox.style.display = checked.includes("colloquium") ? "block" : "none";
+  };
+  checklist.querySelectorAll('[data-role="pendEventCheck"]').forEach(cb=>{
+    cb.addEventListener("change", ()=>{
+      const checked = checklist.querySelectorAll('[data-role="pendEventCheck"]:checked');
+      if(checked.length > 3){
+        cb.checked = false;
+        toast("You can register for up to 3 events only");
+      }
+      updateColloquiumVisibility();
+    });
+  });
+
+  const fileInput = document.getElementById("pendPresFile");
+  fileInput.addEventListener("change", ()=>{
+    const nameEl = document.getElementById("pendPresFileName");
+    const file = fileInput.files[0];
+    if(file){
+      if(file.type && file.type.startsWith("image/")){
+        toast("Images aren't accepted — please upload a PDF, PPT, or Word document instead");
+        fileInput.value = "";
+        nameEl.textContent = "No file selected";
+        return;
+      }
+      if(file.size > 15*1024*1024){
+        toast("That file is too large — please keep it under 15 MB");
+        fileInput.value = "";
+        nameEl.textContent = "No file selected";
+        return;
+      }
+      nameEl.textContent = file.name;
+    } else {
+      nameEl.textContent = "No file selected";
+    }
+  });
+
+  document.getElementById("pendSubmitBtn").addEventListener("click", async ()=>{
+    const p = STATE.participants[participantId];
+    if(!p){ toast("Couldn't find your registration — please scan again"); return; }
+    if(p.completed){ renderMyEvents(p); return; }
+
+    const name = document.getElementById("pendName").value.trim();
+    const phone = document.getElementById("pendPhone").value.trim();
+    const college = document.getElementById("pendCollege").value.trim();
+    const selectedEvents = Array.from(checklist.querySelectorAll('[data-role="pendEventCheck"]:checked')).map(cb=>cb.value);
+    if(!name || !phone || !college){ toast("Name, phone and college are required"); return; }
+    if(selectedEvents.length===0){ toast("Select at least one event"); return; }
+    if(selectedEvents.length>3){ toast("Maximum 3 events allowed"); return; }
+
+    let presTitle = "";
+    let presFile = null;
+    if(selectedEvents.includes("colloquium")){
+      presTitle = document.getElementById("pendPresTitle").value.trim();
+      if(!presTitle){ toast("Presentation title is required for the Research Colloquium"); return; }
+      presFile = fileInput.files[0] || null;
+    }
+
+    const submitBtn = document.getElementById("pendSubmitBtn");
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Submitting…";
+    try{
+      let dataUrl = null, fileName = null;
+      if(presFile){
+        dataUrl = await new Promise((resolve, reject)=>{
+          const reader = new FileReader();
+          reader.onload = ev2=>resolve(ev2.target.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(presFile);
+        });
+        fileName = presFile.name;
+      }
+      const checkins = {};
+      selectedEvents.forEach(eid=>{ checkins[eid]=false; });
+      p.name = name;
+      p.phone = phone;
+      p.college = college;
+      p.events = selectedEvents;
+      p.checkins = checkins;
+      p.completed = true;
+      if(selectedEvents.includes("colloquium")){
+        const team = getOrCreateColloquiumTeam(p.id);
+        team.title = presTitle;
+        if(dataUrl){
+          team.document = {fileName, dataUrl, uploadedAt:new Date().toISOString(), uploadedBy:p.id};
+        }
+      }
+      await saveState();
+      toast("Details submitted — you're all set!");
+      renderMyEvents(p);
+    }catch(err){
+      toast("Something went wrong submitting your details — please try again");
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Submit my details";
+    }
+  });
+
+  updateColloquiumVisibility();
+}
+
+function renderPendingRegistration(p){
+  currentMyEventsParticipantId = p.id;
+  const wrap = document.getElementById("myEventsResults");
+  const msg = document.getElementById("myEventsMsg");
+  msg.style.display = "none";
+  wrap.innerHTML = pendingRegistrationFormHTML(p);
+  wirePendingRegistrationForm(p.id);
+}
+
 function renderMyEvents(p){
   currentMyEventsParticipantId = p.id;
   const wrap = document.getElementById("myEventsResults");
@@ -1447,6 +1620,10 @@ function lookupMyEvents(idRaw){
     msg.textContent = "❌ No registration found with that ID — check with the registration desk.";
     wrap.innerHTML = "";
     currentMyEventsParticipantId = null;
+    return;
+  }
+  if(!p.completed){
+    renderPendingRegistration(p);
     return;
   }
   renderMyEvents(p);
@@ -1764,7 +1941,7 @@ function renderParticipantTable(filter){
       <tbody>
         ${filtered.map(p=>`
           <tr>
-            <td>${p.name}</td>
+            <td>${p.name || '<span class="event-chip pending">Pending — awaiting their details</span>'}</td>
             <td>${p.phone}</td>
             <td>${p.college||""}</td>
             <td class="pid">${p.id}</td>
@@ -1878,6 +2055,7 @@ document.getElementById("saveEditParticipantBtn").addEventListener("click", asyn
   p.college = college;
   p.events = selectedEvents;
   p.checkins = newCheckins;
+  p.completed = true;
   await saveState();
   editParticipantModal.classList.remove("show");
   toast(name + "'s details were updated");
@@ -2242,7 +2420,7 @@ function fillRegistrationId(value){
   const idField = document.getElementById("regParticipantId");
   if(idField) idField.value = value;
   const existing = STATE.participants[value];
-  toast(existing ? `Note: this QR is already registered to ${existing.name}` : "QR scanned — now fill in their details below");
+  toast(existing ? (existing.completed ? `Note: this QR is already registered to ${existing.name}` : "Note: this QR is already registered — waiting on their details") : "QR scanned — hit Register ID to create their entry");
 }
 
 document.getElementById("manualScanBtn").addEventListener("click", ()=>{
@@ -2402,32 +2580,8 @@ function participantsSectionHTML(){
             <button type="button" class="btn secondary" id="regScanBtn">📷 Scan QR</button>
           </div>
         </div>
-        <div class="grid-2">
-          <div class="field">
-            <label for="regName">Full name</label>
-            <input type="text" id="regName" placeholder="Participant's name">
-          </div>
-          <div class="field">
-            <label for="regPhone">Phone number</label>
-            <input type="text" id="regPhone" placeholder="10-digit number">
-          </div>
-        </div>
-        <div class="field">
-          <label for="regCollege">College name</label>
-          <input type="text" id="regCollege" list="collegeDatalist" placeholder="Choose from the list or type a college name" autocomplete="off">
-        </div>
-        <div class="field">
-          <label>Events (choose up to 3)</label>
-          <div class="event-checklist" id="regEventChecklist">
-            ${Object.values(STATE.events).map(ev=>`
-              <label class="event-check-item">
-                <input type="checkbox" value="${ev.id}" data-role="regEventCheck">
-                <span>${ev.name}</span>
-              </label>
-            `).join("")}
-          </div>
-        </div>
-        <button class="btn" id="registerBtn">Register participant</button>
+        <p class="doc-note" style="margin-top:0;">This just registers the ID. Hand the participant their QR code — they scan it themselves under "Find Your Events & Register" on the public page to enter their name, phone, college and event selection (they can only do this once).</p>
+        <button class="btn" id="registerBtn">Register ID</button>
         <p class="cred-row-msg" id="regMsg">Registered.</p>
       </div>
 
@@ -2452,19 +2606,6 @@ function participantsSectionHTML(){
 function wireParticipantsSection(){
   wireCollegesManager();
 
-  const regChecklist = document.getElementById("regEventChecklist");
-  if(regChecklist){
-    regChecklist.querySelectorAll('[data-role="regEventCheck"]').forEach(cb=>{
-      cb.addEventListener("change", ()=>{
-        const checked = regChecklist.querySelectorAll('[data-role="regEventCheck"]:checked');
-        if(checked.length > 3){
-          cb.checked = false;
-          toast("Participants can register for up to 3 events only");
-        }
-      });
-    });
-  }
-
   const regScanBtn = document.getElementById("regScanBtn");
   if(regScanBtn){
     regScanBtn.addEventListener("click", openScanModalForRegistration);
@@ -2474,31 +2615,19 @@ function wireParticipantsSection(){
   if(registerBtn){
     registerBtn.addEventListener("click", async ()=>{
       const id = document.getElementById("regParticipantId").value.trim();
-      const name = document.getElementById("regName").value.trim();
-      const phone = document.getElementById("regPhone").value.trim();
-      const college = document.getElementById("regCollege").value.trim();
-      const selectedEvents = Array.from(document.querySelectorAll('[data-role="regEventCheck"]:checked')).map(cb=>cb.value);
       if(!id){ toast("Scan or enter the participant's QR code/ID first"); return; }
-      if(!name || !phone || !college){ toast("Name, phone and college are required"); return; }
-      if(selectedEvents.length===0){ toast("Select at least one event"); return; }
-      if(selectedEvents.length>3){ toast("Maximum 3 events per participant"); return; }
       if(STATE.participants[id]){
-        toast(`That code is already registered to ${STATE.participants[id].name} — check the table below to edit it`);
+        const existing = STATE.participants[id];
+        toast(existing.completed ? `That code is already registered to ${existing.name} — check the table below to edit it` : "That code is already registered — waiting for the participant to complete their details");
         return;
       }
-      const checkins = {};
-      selectedEvents.forEach(eid=>{ checkins[eid]=false; });
-      STATE.participants[id] = { id, name, phone, college, events:selectedEvents, checkins, registeredAt:new Date().toISOString() };
+      STATE.participants[id] = { id, name:"", phone:"", college:"", events:[], checkins:{}, registeredAt:new Date().toISOString(), completed:false };
       await saveState();
       document.getElementById("regParticipantId").value = "";
-      document.getElementById("regName").value = "";
-      document.getElementById("regPhone").value = "";
-      document.getElementById("regCollege").value = "";
-      document.querySelectorAll('[data-role="regEventCheck"]').forEach(cb=>cb.checked=false);
       const msg = document.getElementById("regMsg");
       msg.classList.add("show");
       setTimeout(()=>msg.classList.remove("show"), 2400);
-      toast(name + " registered");
+      toast(id + " registered — hand them their QR code");
       renderParticipantTable();
     });
   }
