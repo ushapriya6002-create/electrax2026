@@ -819,6 +819,8 @@ footer{border-top:1px solid var(--line); padding:28px 24px; text-align:center; c
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf-autotable.min.js"></script>
 <script>
 /* =========================================================
    STATE — persisted in Supabase (shared across every visitor/
@@ -1293,7 +1295,7 @@ function documentUploadWidgetHTML(ev, p){
       <div class="doc-file-row">
         <label class="file-upload-label secondary">
           📎 Select document
-          <input type="file" data-role="docFile" data-event-doc="${ev.id}" accept=".pdf,.ppt,.pptx,.doc,.docx,image/*">
+          <input type="file" data-role="docFile" data-event-doc="${ev.id}" accept=".pdf,.ppt,.pptx,.doc,.docx,.odp,.odt,.rtf,.txt,.key,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
         </label>
         <span class="doc-file-selected" data-role="docFileName">No file selected</span>
       </div>
@@ -1312,6 +1314,13 @@ function wireMyEventsDocUploads(participantId){
       const nameEl = card.querySelector('[data-role="docFileName"]');
       const uploadBtn = card.querySelector('[data-role="docUploadBtn"]');
       if(file){
+        if(file.type && file.type.startsWith("image/")){
+          toast("Images aren't accepted — please upload a PDF, PPT, or Word document instead");
+          e.target.value = "";
+          nameEl.textContent = "No file selected";
+          uploadBtn.disabled = true;
+          return;
+        }
         if(file.size > 15*1024*1024){
           toast("That file is too large — please keep it under 15 MB");
           e.target.value = "";
@@ -1558,9 +1567,14 @@ function participantDocCellHTML(p){
   if(!p.events.includes("colloquium")) return "—";
   const team = getColloquiumTeam(p.id);
   const doc = team ? team.document : null;
-  if(!doc) return '<span class="doc-missing">Not uploaded</span>';
+  const title = team ? team.title : "";
+  if(!doc){
+    return title
+      ? `<div style="font-size:12px;">${title}</div><span class="doc-missing">No file uploaded</span>`
+      : '<span class="doc-missing">Not uploaded</span>';
+  }
   return `
-    ${team.title ? `<div style="font-size:11px; color:var(--ink-faint); margin-bottom:4px;">${team.title}</div>` : ``}
+    ${title ? `<div style="font-size:11px; color:var(--ink-faint); margin-bottom:4px;">${title}</div>` : ``}
     <div class="btn-row" style="gap:6px; margin:0;">
       <a class="qr-btn-mini" href="${doc.dataUrl}" target="_blank" rel="noopener">View</a>
       <a class="qr-btn-mini" href="${doc.dataUrl}" download="${p.id}${docExtension(doc.fileName)}">Download</a>
@@ -1599,6 +1613,24 @@ function downloadParticipantsCSV(list, filename){
     rows.push([p.name, p.phone, p.college||"", p.id, p.events.join(", "), eventStatus]);
   });
   downloadCSV(filename, rows);
+}
+
+function downloadPDF(title, head, body, filename){
+  if(typeof window.jspdf === "undefined"){ toast("PDF export isn't available right now"); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({orientation:"landscape"});
+  doc.setFontSize(13);
+  doc.text(title, 14, 15);
+  doc.autoTable({ head:[head], body, startY:20, styles:{fontSize:8, cellPadding:2}, headStyles:{fillColor:[40,40,40]} });
+  doc.save(filename);
+}
+function downloadParticipantsPDF(list, title, filename){
+  const head = ["Name","Phone","College","ID","Events","Checked-in status"];
+  const body = list.map(p=>{
+    const eventStatus = p.events.map(eid=>`${STATE.events[eid]?STATE.events[eid].name:eid}: ${p.checkins[eid]?"checked in":"not checked in"}`).join(" | ");
+    return [p.name, p.phone, p.college||"", p.id, p.events.join(", "), eventStatus];
+  });
+  downloadPDF(title, head, body, filename);
 }
 
 function renderParticipantTable(filter){
@@ -1886,6 +1918,14 @@ function applyScanSearch(value){
   if(scope === "main"){
     const input = document.getElementById("participantSearch");
     if(input){ input.value = value; renderParticipantTable(value.trim().toLowerCase()); }
+  } else if(scope && scope.indexOf("team:")===0){
+    const eventId = scope.slice(5);
+    const input = document.getElementById("teamListSearch");
+    const mainSearch = document.getElementById("eventParticipantSearch");
+    if(input){
+      input.value = value;
+      renderEventParticipantLists(eventId, mainSearch ? mainSearch.value.trim().toLowerCase() : "", value.trim().toLowerCase());
+    }
   } else if(scope){
     const input = document.getElementById("eventParticipantSearch");
     if(input){ input.value = value; renderEventParticipantLists(scope, value.trim().toLowerCase()); }
@@ -2218,7 +2258,8 @@ function participantsSectionHTML(){
           <div class="btn-row">
             <input type="text" id="participantSearch" placeholder="Start typing..." style="flex:1;">
             <button type="button" class="btn secondary" id="participantSearchScanBtn">📷 Scan</button>
-            <button type="button" class="btn secondary" id="participantDownloadBtn">⬇️ Download CSV</button>
+            <button type="button" class="btn secondary" id="participantDownloadBtn">⬇️ CSV</button>
+            <button type="button" class="btn secondary" id="participantDownloadPdfBtn">⬇️ PDF</button>
           </div>
         </div>
         <div id="participantTableWrap"></div>
@@ -2296,6 +2337,13 @@ function wireParticipantsSection(){
     downloadBtn.addEventListener("click", ()=>{
       const filter = document.getElementById("participantSearch") ? document.getElementById("participantSearch").value.trim().toLowerCase() : "";
       downloadParticipantsCSV(filterParticipants(filter), "all-participants.csv");
+    });
+  }
+  const downloadPdfBtn = document.getElementById("participantDownloadPdfBtn");
+  if(downloadPdfBtn){
+    downloadPdfBtn.addEventListener("click", ()=>{
+      const filter = document.getElementById("participantSearch") ? document.getElementById("participantSearch").value.trim().toLowerCase() : "";
+      downloadParticipantsPDF(filterParticipants(filter), "All registered participants", "all-participants.pdf");
     });
   }
 
@@ -2817,7 +2865,7 @@ function eventAdminHTML(ev){
     </div>
     <div class="admin-section">
       <h3>Registered participants</h3>
-      <p class="sub">Everyone registered for this event, split by check-in status.${isColloquium ? " Checked-in participants are grouped by team." : ""}</p>
+      <p class="sub">Everyone registered for this event, then a separate list of who's checked in.${isColloquium ? " Checked-in participants are grouped by team." : ""}</p>
       <div class="admin-event-card">
         <div class="field">
           <label for="eventParticipantSearch">Search by name, phone, ID or college</label>
@@ -2829,17 +2877,23 @@ function eventAdminHTML(ev){
       </div>
       <div class="admin-event-card">
         <div class="rounds-toggle-row" style="margin-bottom:0;">
-          <h4 style="margin:0;">✅ Checked in</h4>
-          <button type="button" class="qr-btn-mini" id="eventCheckedInDownloadBtn">⬇️ Download CSV</button>
+          <h4 style="margin:0;">All registered members</h4>
+          <div class="btn-row" style="margin:0;">
+            <button type="button" class="qr-btn-mini" id="eventAllMembersCsvBtn">⬇️ CSV</button>
+            <button type="button" class="qr-btn-mini" id="eventAllMembersPdfBtn">⬇️ PDF</button>
+          </div>
         </div>
-        <div id="eventCheckedInWrap"></div>
+        <div id="eventAllMembersWrap"></div>
       </div>
       <div class="admin-event-card">
         <div class="rounds-toggle-row" style="margin-bottom:0;">
-          <h4 style="margin:0;">⏳ Not checked in</h4>
-          <button type="button" class="qr-btn-mini" id="eventNotCheckedInDownloadBtn">⬇️ Download CSV</button>
+          <h4 style="margin:0;">✅ Checked in</h4>
+          <div class="btn-row" style="margin:0;">
+            <button type="button" class="qr-btn-mini" id="eventCheckedInCsvBtn">⬇️ CSV</button>
+            <button type="button" class="qr-btn-mini" id="eventCheckedInPdfBtn">⬇️ PDF</button>
+          </div>
         </div>
-        <div id="eventNotCheckedInWrap"></div>
+        <div id="eventCheckedInWrap"></div>
       </div>
     </div>
     ${isColloquium ? `
@@ -2847,9 +2901,19 @@ function eventAdminHTML(ev){
         <h3>All teams — full details</h3>
         <p class="sub">Every Research Colloquium registration grouped by team, with college, presentation and check-in status.</p>
         <div class="admin-event-card">
+          <div class="field">
+            <label for="teamListSearch">Search teams by name, phone, ID or college</label>
+            <div class="btn-row">
+              <input type="text" id="teamListSearch" placeholder="Start typing..." style="flex:1;">
+              <button type="button" class="btn secondary" id="teamListScanBtn">📷 Scan</button>
+            </div>
+          </div>
           <div class="rounds-toggle-row" style="margin-bottom:0;">
             <h4 style="margin:0;">Teams</h4>
-            <button type="button" class="qr-btn-mini" id="eventTeamsDownloadBtn">⬇️ Download CSV</button>
+            <div class="btn-row" style="margin:0;">
+              <button type="button" class="qr-btn-mini" id="eventTeamsCsvBtn">⬇️ CSV</button>
+              <button type="button" class="qr-btn-mini" id="eventTeamsPdfBtn">⬇️ PDF</button>
+            </div>
           </div>
           <div id="eventTeamsTableWrap"></div>
         </div>
@@ -2871,35 +2935,69 @@ function wireEventAdmin(eventId){
   if(scanBtn){
     scanBtn.addEventListener("click", ()=>openScanModalForSearch(eventId));
   }
-  const checkedDlBtn = document.getElementById("eventCheckedInDownloadBtn");
-  if(checkedDlBtn){
-    checkedDlBtn.addEventListener("click", ()=>{
+  const allMembersCsvBtn = document.getElementById("eventAllMembersCsvBtn");
+  if(allMembersCsvBtn){
+    allMembersCsvBtn.addEventListener("click", ()=>{
+      const filter = searchInput ? searchInput.value.trim().toLowerCase() : "";
+      const list = filterParticipants(filter, Object.values(STATE.participants).filter(p=>p.events.includes(eventId)));
+      downloadParticipantsCSV(list, `${eventId}-all-members.csv`);
+    });
+  }
+  const allMembersPdfBtn = document.getElementById("eventAllMembersPdfBtn");
+  if(allMembersPdfBtn){
+    allMembersPdfBtn.addEventListener("click", ()=>{
+      const filter = searchInput ? searchInput.value.trim().toLowerCase() : "";
+      const list = filterParticipants(filter, Object.values(STATE.participants).filter(p=>p.events.includes(eventId)));
+      downloadParticipantsPDF(list, `${STATE.events[eventId].name} — all registered members`, `${eventId}-all-members.pdf`);
+    });
+  }
+  const checkedCsvBtn = document.getElementById("eventCheckedInCsvBtn");
+  if(checkedCsvBtn){
+    checkedCsvBtn.addEventListener("click", ()=>{
       const filter = searchInput ? searchInput.value.trim().toLowerCase() : "";
       const list = filterParticipants(filter, Object.values(STATE.participants).filter(p=>p.events.includes(eventId))).filter(p=>p.checkins[eventId]);
       downloadParticipantsCSV(list, `${eventId}-checked-in.csv`);
     });
   }
-  const notCheckedDlBtn = document.getElementById("eventNotCheckedInDownloadBtn");
-  if(notCheckedDlBtn){
-    notCheckedDlBtn.addEventListener("click", ()=>{
+  const checkedPdfBtn = document.getElementById("eventCheckedInPdfBtn");
+  if(checkedPdfBtn){
+    checkedPdfBtn.addEventListener("click", ()=>{
       const filter = searchInput ? searchInput.value.trim().toLowerCase() : "";
-      const list = filterParticipants(filter, Object.values(STATE.participants).filter(p=>p.events.includes(eventId))).filter(p=>!p.checkins[eventId]);
-      downloadParticipantsCSV(list, `${eventId}-not-checked-in.csv`);
+      const list = filterParticipants(filter, Object.values(STATE.participants).filter(p=>p.events.includes(eventId))).filter(p=>p.checkins[eventId]);
+      downloadParticipantsPDF(list, `${STATE.events[eventId].name} — checked in`, `${eventId}-checked-in.pdf`);
     });
   }
-  const teamsDlBtn = document.getElementById("eventTeamsDownloadBtn");
-  if(teamsDlBtn){
-    teamsDlBtn.addEventListener("click", ()=>{
-      const filter = searchInput ? searchInput.value.trim().toLowerCase() : "";
+
+  const teamSearchInput = document.getElementById("teamListSearch");
+  if(teamSearchInput){
+    teamSearchInput.addEventListener("input", ()=>{
+      renderEventParticipantLists(eventId, searchInput ? searchInput.value.trim().toLowerCase() : "", teamSearchInput.value.trim().toLowerCase());
+    });
+  }
+  const teamScanBtn = document.getElementById("teamListScanBtn");
+  if(teamScanBtn){
+    teamScanBtn.addEventListener("click", ()=>openScanModalForSearch("team:"+eventId));
+  }
+  const teamsCsvBtn = document.getElementById("eventTeamsCsvBtn");
+  if(teamsCsvBtn){
+    teamsCsvBtn.addEventListener("click", ()=>{
+      const filter = teamSearchInput ? teamSearchInput.value.trim().toLowerCase() : "";
       downloadTeamsCSV(filter);
+    });
+  }
+  const teamsPdfBtn = document.getElementById("eventTeamsPdfBtn");
+  if(teamsPdfBtn){
+    teamsPdfBtn.addEventListener("click", ()=>{
+      const filter = teamSearchInput ? teamSearchInput.value.trim().toLowerCase() : "";
+      downloadTeamsPDF(filter);
     });
   }
 }
 
-function participantsMiniTableHTML(list, eventId, showCheckinBtn, showDocs){
+function participantsMiniTableHTML(list, eventId, showStatusAndCheckin, showDocs){
   return `
     <table class="participant-table">
-      <thead><tr><th>Name</th><th>Phone</th><th>College</th><th>ID</th>${showDocs ? '<th>Document</th>' : ''}${showCheckinBtn ? '<th></th>' : ''}</tr></thead>
+      <thead><tr><th>Name</th><th>Phone</th><th>College</th><th>ID</th>${showDocs ? '<th>Document</th>' : ''}${showStatusAndCheckin ? '<th>Status</th><th></th>' : ''}</tr></thead>
       <tbody>
         ${list.map(p=>`
           <tr>
@@ -2908,7 +3006,10 @@ function participantsMiniTableHTML(list, eventId, showCheckinBtn, showDocs){
             <td>${p.college||""}</td>
             <td class="pid">${p.id}</td>
             ${showDocs ? `<td>${participantDocCellHTML(p)}</td>` : ''}
-            ${showCheckinBtn ? `<td><button type="button" class="qr-btn-mini" data-quick-checkin="${p.id}">Check in</button></td>` : ''}
+            ${showStatusAndCheckin ? `
+              <td><span class="event-chip ${p.checkins[eventId] ? 'checked' : 'pending'}">${p.checkins[eventId] ? 'Checked in ✓' : 'Not checked in'}</span></td>
+              <td>${p.checkins[eventId] ? '' : `<button type="button" class="qr-btn-mini" data-quick-checkin="${p.id}">Check in</button>`}</td>
+            ` : ''}
           </tr>
         `).join("")}
       </tbody>
@@ -2918,7 +3019,11 @@ function participantsMiniTableHTML(list, eventId, showCheckinBtn, showDocs){
 
 function participantDocCellHTMLForTeam(team){
   const doc = team.document;
-  if(!doc) return '<span class="doc-missing">Not uploaded</span>';
+  if(!doc){
+    return team.title
+      ? `<div style="font-size:12px;">${team.title}</div><span class="doc-missing">No file uploaded</span>`
+      : '<span class="doc-missing">Not uploaded</span>';
+  }
   return `
     ${team.title ? `<div style="font-size:11px; color:var(--ink-faint); margin-bottom:4px;">${team.title}</div>` : ``}
     <div class="btn-row" style="gap:6px; margin:0;">
@@ -2951,12 +3056,12 @@ function colloquiumTeamsTableHTML(filter){
   if(rows.length===0) return '<p class="announce-empty">No one has registered for this event yet.</p>';
   return `
     <table class="participant-table">
-      <thead><tr><th>S.No</th><th>Team ID</th><th>Participation names</th><th>Phone number</th><th>College name</th><th>PPT</th><th>Checked-in status &amp; edit</th></tr></thead>
+      <thead><tr><th>S.No</th><th>Member ID(s)</th><th>Participation names</th><th>Phone number</th><th>College name</th><th>PPT</th><th>Checked-in status &amp; edit</th></tr></thead>
       <tbody>
         ${rows.map((r,i)=>`
           <tr>
             <td>${i+1}</td>
-            <td class="pid">${r.teamId}</td>
+            <td class="pid">${r.members.map(m=>m.id).join("<br>")}</td>
             <td>${r.members.map(m=>m.name).join("<br>")}</td>
             <td>${r.members.map(m=>m.phone).join("<br>")}</td>
             <td>${r.members.map(m=>m.college||"—").join("<br>")}</td>
@@ -2990,11 +3095,11 @@ async function editTeamTitle(teamId){
 
 function downloadTeamsCSV(filter){
   const rows = getColloquiumTeamRows(filter);
-  const csvRows = [["S.No","Team ID","Participation names","Phone number","College name","Presentation title","Checked-in status"]];
+  const csvRows = [["S.No","Member ID(s)","Participation names","Phone number","College name","Presentation title","Checked-in status"]];
   rows.forEach((r,i)=>{
     const status = r.members.map(m=>`${m.name}: ${m.checkins.colloquium?"checked in":"not checked in"}`).join(" | ");
     csvRows.push([
-      i+1, r.teamId,
+      i+1, r.members.map(m=>m.id).join(" / "),
       r.members.map(m=>m.name).join(" / "),
       r.members.map(m=>m.phone).join(" / "),
       r.members.map(m=>m.college||"").join(" / "),
@@ -3004,18 +3109,42 @@ function downloadTeamsCSV(filter){
   });
   downloadCSV("colloquium-teams.csv", csvRows);
 }
+function downloadTeamsPDF(filter){
+  const rows = getColloquiumTeamRows(filter);
+  const head = ["S.No","Member ID(s)","Participation names","Phone number","College name","Presentation title","Checked-in status"];
+  const body = rows.map((r,i)=>{
+    const status = r.members.map(m=>`${m.name}: ${m.checkins.colloquium?"checked in":"not checked in"}`).join(" | ");
+    return [
+      i+1, r.members.map(m=>m.id).join(" / "),
+      r.members.map(m=>m.name).join(" / "),
+      r.members.map(m=>m.phone).join(" / "),
+      r.members.map(m=>m.college||"").join(" / "),
+      r.team ? r.team.title : "",
+      status
+    ];
+  });
+  downloadPDF("Research Colloquium (PPT) — teams", head, body, "colloquium-teams.pdf");
+}
 
-function renderEventParticipantLists(eventId, filter){
+function renderEventParticipantLists(eventId, filter, teamFilter){
+  const allWrap = document.getElementById("eventAllMembersWrap");
   const checkedWrap = document.getElementById("eventCheckedInWrap");
-  const notCheckedWrap = document.getElementById("eventNotCheckedInWrap");
-  if(!checkedWrap || !notCheckedWrap) return;
+  if(!allWrap || !checkedWrap) return;
   const showDocs = DOC_EVENTS.includes(eventId);
   const isTeamEvent = eventId === "colloquium";
   const all = filterParticipants(filter, Object.values(STATE.participants)
     .filter(p=>p.events.includes(eventId))
     .sort((a,b)=> new Date(b.registeredAt) - new Date(a.registeredAt)));
   const checkedIn = all.filter(p=>p.checkins[eventId]);
-  const notCheckedIn = all.filter(p=>!p.checkins[eventId]);
+
+  if(all.length===0){
+    allWrap.innerHTML = '<p class="announce-empty">No one has registered for this event yet.</p>';
+  } else {
+    allWrap.innerHTML = participantsMiniTableHTML(all, eventId, true, showDocs);
+  }
+  allWrap.querySelectorAll("[data-quick-checkin]").forEach(btn=>{
+    btn.addEventListener("click", ()=>checkInParticipant(btn.dataset.quickCheckin, eventId));
+  });
 
   if(checkedIn.length===0){
     checkedWrap.innerHTML = '<p class="announce-empty">No one checked in yet.</p>';
@@ -3041,19 +3170,10 @@ function renderEventParticipantLists(eventId, filter){
     checkedWrap.innerHTML = participantsMiniTableHTML(checkedIn, eventId, false, showDocs);
   }
 
-  if(notCheckedIn.length===0){
-    notCheckedWrap.innerHTML = '<p class="announce-empty">Everyone registered has checked in.</p>';
-  } else {
-    notCheckedWrap.innerHTML = participantsMiniTableHTML(notCheckedIn, eventId, true, showDocs);
-  }
-  notCheckedWrap.querySelectorAll("[data-quick-checkin]").forEach(btn=>{
-    btn.addEventListener("click", ()=>checkInParticipant(btn.dataset.quickCheckin, eventId));
-  });
-
   if(eventId === "colloquium"){
     const teamsWrap = document.getElementById("eventTeamsTableWrap");
     if(teamsWrap){
-      teamsWrap.innerHTML = colloquiumTeamsTableHTML(filter);
+      teamsWrap.innerHTML = colloquiumTeamsTableHTML(teamFilter);
       teamsWrap.querySelectorAll("[data-edit-participant]").forEach(btn=>{
         btn.addEventListener("click", ()=>openEditParticipantModal(btn.dataset.editParticipant));
       });
