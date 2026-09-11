@@ -802,6 +802,31 @@ footer{border-top:1px solid var(--line); padding:28px 24px; text-align:center; c
   </div>
 </div>
 
+<!-- ===================== EDIT TEAM MODAL (admin) ===================== -->
+<div class="modal-backdrop" id="editTeamModal">
+  <div class="modal">
+    <button class="modal-close" id="closeEditTeamModal" aria-label="Close">&times;</button>
+    <h3>Edit team</h3>
+    <p class="sub" id="editTeamIdLabel" style="font-family:monospace;"></p>
+    <div class="field">
+      <label for="editTeamTitleInput">Presentation title</label>
+      <div class="btn-row">
+        <input type="text" id="editTeamTitleInput" placeholder="Presentation title" style="flex:1;">
+        <button type="button" class="btn secondary" id="editTeamTitleSaveBtn">Save</button>
+      </div>
+    </div>
+    <div class="field">
+      <label id="editTeamMembersLabel">Team members</label>
+      <div id="editTeamMembersList" style="margin-bottom:10px;"></div>
+      <div class="btn-row">
+        <input type="text" id="editTeamAddMemberInput" placeholder="Add member by participant ID" style="flex:1; font-family:monospace;">
+        <button type="button" class="btn secondary" id="editTeamAddMemberBtn">+ Add</button>
+      </div>
+      <p class="doc-note">If the ID you add already has its own title/file from registering separately, you'll be asked which one to keep for the merged team.</p>
+    </div>
+  </div>
+</div>
+
 <!-- ===================== MY EVENTS SCAN MODAL (public) ===================== -->
 <div class="modal-backdrop" id="myEventsScanModal">
   <div class="modal">
@@ -1426,6 +1451,7 @@ function pendingRegistrationFormHTML(p){
   return `
     <div class="doc-upload-card">
       <p class="my-events-greeting" style="margin-bottom:12px;">Your code <b>${p.id}</b> is registered — finish your details below. You can only submit this once, so double-check everything first.</p>
+      <p class="modal-error" style="display:block; margin-bottom:14px;">⚠️ Make sure this is <b>your own</b> QR code before continuing — if cards got mixed up with a teammate's, swap back first. Whatever you enter here gets permanently linked to this ID for check-ins.</p>
       <div class="grid-2">
         <div class="field">
           <label for="pendName">Full name</label>
@@ -1453,7 +1479,7 @@ function pendingRegistrationFormHTML(p){
       </div>
       <div id="pendColloquiumFields" style="display:none;">
         <div class="field">
-          <label>Presentation title <span style="color:var(--ember);">*</span> — required for the Research Colloquium</label>
+          <label>Presentation title <span style="color:var(--ember);">*</span> — required to upload a file</label>
           <input type="text" id="pendPresTitle" placeholder="Title of your presentation">
         </div>
         <div class="doc-file-row">
@@ -1463,7 +1489,7 @@ function pendingRegistrationFormHTML(p){
           </label>
           <span class="doc-file-selected" id="pendPresFileName">No file selected</span>
         </div>
-        <p class="doc-note">The file isn't compulsory — you can also upload or replace it later from this same screen. Only the presentation title is required now.</p>
+        <p class="doc-note">Neither field is compulsory right now — you can add the title and upload the file later from this same screen. But if you do attach a file now, the title becomes required.</p>
       </div>
       <button class="btn" id="pendSubmitBtn" style="margin-top:6px;">Submit my details</button>
     </div>
@@ -1528,8 +1554,8 @@ function wirePendingRegistrationForm(participantId){
     let presFile = null;
     if(selectedEvents.includes("colloquium")){
       presTitle = document.getElementById("pendPresTitle").value.trim();
-      if(!presTitle){ toast("Presentation title is required for the Research Colloquium"); return; }
       presFile = fileInput.files[0] || null;
+      if(presFile && !presTitle){ toast("Enter a presentation title before uploading your file"); return; }
     }
 
     const submitBtn = document.getElementById("pendSubmitBtn");
@@ -1786,7 +1812,10 @@ function participantDocCellHTML(p){
 }
 
 function filterParticipants(filter, list){
-  const source = list || Object.values(STATE.participants).sort((a,b)=> new Date(b.registeredAt) - new Date(a.registeredAt));
+  const source = list || Object.values(STATE.participants).sort((a,b)=>{
+    if(a.completed !== b.completed) return a.completed ? 1 : -1; /* pending participants (awaiting their own details) float to the top */
+    return new Date(b.registeredAt) - new Date(a.registeredAt);
+  });
   if(!filter) return source;
   return source.filter(p=>
     p.name.toLowerCase().includes(filter) ||
@@ -1819,12 +1848,12 @@ function downloadCSV(filename, rows){
   URL.revokeObjectURL(url);
 }
 function downloadParticipantsCSV(list, filename, includeTitle){
-  const head = ["Name","Phone","College","ID","Events","Checked-in status"];
+  const head = ["S.No","Name","Phone","College","ID","Events","Checked-in status"];
   if(includeTitle) head.push("Presentation title");
   const rows = [head];
-  list.forEach(p=>{
+  list.forEach((p,i)=>{
     const eventStatus = p.events.map(eid=>`${STATE.events[eid]?STATE.events[eid].name:eid}: ${p.checkins[eid]?"checked in":"not checked in"}`).join(" | ");
-    const row = [p.name, csvForceText(p.phone), p.college||"", csvForceText(p.id), p.events.map(eid=>STATE.events[eid]?STATE.events[eid].name:eid).join(", "), eventStatus];
+    const row = [i+1, p.name, csvForceText(p.phone), p.college||"", csvForceText(p.id), p.events.map(eid=>STATE.events[eid]?STATE.events[eid].name:eid).join(", "), eventStatus];
     if(includeTitle){
       const team = getColloquiumTeam(p.id);
       row.push(team ? (team.title || "") : "");
@@ -1913,11 +1942,11 @@ function drawSimplePdfTable(doc, head, body, startY){
   });
 }
 function downloadParticipantsPDF(list, title, filename, includeTitle){
-  const head = ["Name","Phone","College","ID","Events","Checked-in status"];
+  const head = ["S.No","Name","Phone","College","ID","Events","Checked-in status"];
   if(includeTitle) head.push("Presentation title");
-  const body = list.map(p=>{
+  const body = list.map((p,i)=>{
     const eventStatus = p.events.map(eid=>`${STATE.events[eid]?STATE.events[eid].name:eid}: ${p.checkins[eid]?"checked in":"not checked in"}`).join(" | ");
-    const row = [p.name, p.phone, p.college||"", p.id, p.events.map(eid=>STATE.events[eid]?STATE.events[eid].name:eid).join(", "), eventStatus];
+    const row = [i+1, p.name, p.phone, p.college||"", p.id, p.events.map(eid=>STATE.events[eid]?STATE.events[eid].name:eid).join(", "), eventStatus];
     if(includeTitle){
       const team = getColloquiumTeam(p.id);
       row.push(team ? (team.title || "") : "");
@@ -1937,10 +1966,11 @@ function renderParticipantTable(filter){
   }
   wrap.innerHTML = `
     <table class="participant-table">
-      <thead><tr><th>Name</th><th>Phone</th><th>College</th><th>ID</th><th>Events</th><th>PPT</th><th></th></tr></thead>
+      <thead><tr><th>S.No</th><th>Name</th><th>Phone</th><th>College</th><th>ID</th><th>Events</th><th>PPT</th><th></th></tr></thead>
       <tbody>
-        ${filtered.map(p=>`
+        ${filtered.map((p,i)=>`
           <tr>
+            <td>${i+1}</td>
             <td>${p.name || '<span class="event-chip pending">Pending — awaiting their details</span>'}</td>
             <td>${p.phone}</td>
             <td>${p.college||""}</td>
@@ -2031,6 +2061,34 @@ function openEditParticipantModal(participantId){
 }
 document.getElementById("closeEditParticipantModal").addEventListener("click", ()=>editParticipantModal.classList.remove("show"));
 editParticipantModal.addEventListener("click", (e)=>{ if(e.target===editParticipantModal) editParticipantModal.classList.remove("show"); });
+
+const editTeamModal = document.getElementById("editTeamModal");
+document.getElementById("closeEditTeamModal").addEventListener("click", ()=>editTeamModal.classList.remove("show"));
+editTeamModal.addEventListener("click", (e)=>{ if(e.target===editTeamModal) editTeamModal.classList.remove("show"); });
+document.getElementById("editTeamTitleSaveBtn").addEventListener("click", async ()=>{
+  const team = (STATE.teams||{})[currentEditTeamId];
+  if(!team) return;
+  team.title = document.getElementById("editTeamTitleInput").value.trim();
+  await saveState();
+  toast("Presentation title updated");
+  renderAdmin();
+});
+document.getElementById("editTeamAddMemberBtn").addEventListener("click", async ()=>{
+  const newId = document.getElementById("editTeamAddMemberInput").value.trim();
+  if(!newId){ toast("Enter the teammate's participant ID"); return; }
+  const plan = planTeamMerge(currentEditTeamId, newId);
+  if(!plan.ok){ toast(plan.reason); return; }
+  let keep = null;
+  if(plan.needsChoice){
+    keep = chooseTeamMergeContent(plan);
+    if(keep === null){ toast("Merge cancelled"); return; }
+  }
+  await applyTeamMerge(plan, keep);
+  document.getElementById("editTeamAddMemberInput").value = "";
+  toast(plan.mate.name + " added to the team");
+  renderEditTeamMembersList(currentEditTeamId);
+  renderAdmin();
+});
 
 document.getElementById("saveEditParticipantBtn").addEventListener("click", async ()=>{
   const p = STATE.participants[editingParticipantId];
@@ -2350,17 +2408,16 @@ async function addTeammateById(newId){
     refreshScanTeamSection(participantId, eventId);
   };
   if(!newId){ toast("Enter or scan the teammate's participant ID"); finish(); return; }
-  const mate = STATE.participants[newId];
-  if(!mate){ toast("No participant found with that ID"); finish(); return; }
-  if(!mate.events.includes("colloquium")){ toast(mate.name + " isn't registered for this event"); finish(); return; }
   const team = getOrCreateColloquiumTeam(participantId);
-  if(team.memberIds.includes(newId)){ toast(mate.name + " is already on this team"); finish(); return; }
-  const mateTeam = getColloquiumTeam(newId);
-  if(mateTeam && mateTeam.id !== team.id){ toast(mate.name + " is already on another team"); finish(); return; }
-  if(team.memberIds.length >= TEAM_EVENT_MAX_MEMBERS){ toast(`A team can have at most ${TEAM_EVENT_MAX_MEMBERS} members`); finish(); return; }
-  team.memberIds.push(newId);
-  await saveState();
-  toast(mate.name + " added to the team");
+  const plan = planTeamMerge(team.id, newId);
+  if(!plan.ok){ toast(plan.reason); finish(); return; }
+  let keep = null;
+  if(plan.needsChoice){
+    keep = chooseTeamMergeContent(plan);
+    if(keep === null){ toast("Merge cancelled"); finish(); return; }
+  }
+  await applyTeamMerge(plan, keep);
+  toast(plan.mate.name + " added to the team");
   finish();
 }
 
@@ -2463,6 +2520,31 @@ async function checkInParticipant(participantId, eventId){
   } else {
     renderAdmin();
   }
+}
+
+async function undoCheckin(participantId, eventId){
+  const p = STATE.participants[participantId];
+  if(!p || !p.checkins[eventId]) return;
+  p.checkins[eventId] = false;
+  if(STATE.events[eventId]){
+    STATE.events[eventId].checkedIn = Math.max(0, (STATE.events[eventId].checkedIn||0) - 1);
+  }
+  await saveState();
+  toast(`${p.name} marked as not checked in`);
+  if(session && session.type==="main"){
+    renderAdminEventList();
+    renderParticipantTable(document.getElementById("participantSearch") ? document.getElementById("participantSearch").value.trim().toLowerCase() : "");
+  } else {
+    renderAdmin();
+  }
+}
+
+/* single entry point for the toggle buttons in every checked-in-style list */
+function toggleCheckin(participantId, eventId){
+  const p = STATE.participants[participantId];
+  if(!p) return;
+  if(p.checkins[eventId]) undoCheckin(participantId, eventId);
+  else checkInParticipant(participantId, eventId);
 }
 
 /* ---------- admin view ---------- */
@@ -3309,10 +3391,11 @@ function wireEventAdmin(eventId){
 function participantsMiniTableHTML(list, eventId, showStatusAndCheckin, showDocs){
   return `
     <table class="participant-table">
-      <thead><tr><th>Name</th><th>Phone</th><th>College</th><th>ID</th>${showDocs ? '<th>Document</th>' : ''}${showStatusAndCheckin ? '<th>Status</th><th></th>' : ''}</tr></thead>
+      <thead><tr><th>S.No</th><th>Name</th><th>Phone</th><th>College</th><th>ID</th>${showDocs ? '<th>Document</th>' : ''}${showStatusAndCheckin ? '<th>Status</th><th></th>' : ''}</tr></thead>
       <tbody>
-        ${list.map(p=>`
+        ${list.map((p,i)=>`
           <tr>
+            <td>${i+1}</td>
             <td>${p.name}</td>
             <td>${p.phone}</td>
             <td>${p.college||""}</td>
@@ -3320,7 +3403,7 @@ function participantsMiniTableHTML(list, eventId, showStatusAndCheckin, showDocs
             ${showDocs ? `<td>${participantDocCellHTML(p)}</td>` : ''}
             ${showStatusAndCheckin ? `
               <td><span class="event-chip ${p.checkins[eventId] ? 'checked' : 'pending'}">${p.checkins[eventId] ? 'Checked in ✓' : 'Not checked in'}</span></td>
-              <td>${p.checkins[eventId] ? '' : `<button type="button" class="qr-btn-mini" data-quick-checkin="${p.id}">Check in</button>`}</td>
+              <td><button type="button" class="qr-btn-mini" data-toggle-checkin="${p.id}" data-toggle-event="${eventId}">${p.checkins[eventId] ? 'Undo check-in' : 'Check in'}</button></td>
             ` : ''}
           </tr>
         `).join("")}
@@ -3363,9 +3446,14 @@ function getColloquiumTeamRows(filter){
   return rows;
 }
 
-function colloquiumTeamsTableHTML(filter){
-  const rows = getColloquiumTeamRows(filter);
-  if(rows.length===0) return '<p class="announce-empty">No one has registered for this event yet.</p>';
+function colloquiumTeamsTableHTML(filter, onlyCheckedIn){
+  let rows = getColloquiumTeamRows(filter);
+  if(onlyCheckedIn){
+    rows = rows
+      .map(r=>Object.assign({}, r, {members: r.members.filter(m=>m.checkins.colloquium)}))
+      .filter(r=>r.members.length>0);
+  }
+  if(rows.length===0) return `<p class="announce-empty">${onlyCheckedIn ? "No one checked in yet." : "No one has registered for this event yet."}</p>`;
   return `
     <table class="participant-table">
       <thead><tr><th>S.No</th><th>Member ID(s)</th><th>Participation names</th><th>Phone number</th><th>College name</th><th>PPT</th><th>Checked-in status &amp; edit</th></tr></thead>
@@ -3379,12 +3467,17 @@ function colloquiumTeamsTableHTML(filter){
             <td>${r.members.map(m=>m.college||"—").join("<br>")}</td>
             <td>${r.team ? participantDocCellHTMLForTeam(r.team) : '<span class="doc-missing">Not uploaded</span>'}</td>
             <td>
-              <div class="event-chip-row" style="margin-bottom:6px;">
-                ${r.members.map(m=>`<span class="event-chip ${m.checkins.colloquium?'checked':'pending'}">${m.name}${m.checkins.colloquium?' ✓':''}</span>`).join("")}
+              <div class="event-chip-row" style="margin-bottom:6px; flex-wrap:wrap;">
+                ${r.members.map(m=>`
+                  <span class="event-chip ${m.checkins.colloquium?'checked':'pending'}" style="display:inline-flex; align-items:center; gap:6px;">
+                    ${m.name}${m.checkins.colloquium?' ✓':''}
+                    <button type="button" class="qr-btn-mini" data-toggle-checkin="${m.id}" data-toggle-event="colloquium" style="padding:1px 6px; font-size:10px;">${m.checkins.colloquium ? 'Undo' : 'Check in'}</button>
+                  </span>
+                `).join("")}
               </div>
               <div class="btn-row" style="gap:6px; margin:0;">
                 <button type="button" class="qr-btn-mini" data-edit-participant="${r.members[0].id}">Edit member</button>
-                ${r.team ? `<button type="button" class="qr-btn-mini" data-edit-team-title="${r.team.id}">Edit title</button>` : ``}
+                <button type="button" class="qr-btn-mini" data-edit-team="${r.team ? r.team.id : r.members[0].id}">Edit team</button>
               </div>
             </td>
           </tr>
@@ -3394,15 +3487,99 @@ function colloquiumTeamsTableHTML(filter){
   `;
 }
 
-async function editTeamTitle(teamId){
+/* ---- team merge planning: figures out what WOULD happen if newId joins
+   targetTeamId, without mutating anything yet. If the incoming participant
+   already has their own team with a title/document AND the target team also
+   already has one, needsChoice=true — the caller must ask which to keep. ---- */
+function planTeamMerge(targetTeamId, newId){
+  const targetTeam = (STATE.teams||{})[targetTeamId];
+  if(!targetTeam) return {ok:false, reason:"Team not found"};
+  const mate = STATE.participants[newId];
+  if(!mate) return {ok:false, reason:"No participant found with that ID"};
+  if(!mate.events.includes("colloquium")) return {ok:false, reason:`${mate.name} isn't registered for this event`};
+  if(targetTeam.memberIds.includes(newId)) return {ok:false, reason:`${mate.name} is already on this team`};
+  const rawMateTeam = getColloquiumTeam(newId);
+  const mateTeam = (rawMateTeam && rawMateTeam.id !== targetTeam.id) ? rawMateTeam : null;
+  const incomingCount = mateTeam ? mateTeam.memberIds.length : 1;
+  if(targetTeam.memberIds.length + incomingCount > TEAM_EVENT_MAX_MEMBERS){
+    return {ok:false, reason:`A team can have at most ${TEAM_EVENT_MAX_MEMBERS} members`};
+  }
+  const needsChoice = !!(mateTeam && (targetTeam.title || targetTeam.document) && (mateTeam.title || mateTeam.document));
+  return {ok:true, targetTeam, mateTeam, mate, needsChoice};
+}
+
+/* applies a plan from planTeamMerge. keep: "target" | "mate" | null
+   (null = no conflict, so just adopt whichever side has content) */
+async function applyTeamMerge(plan, keep){
+  const {targetTeam, mateTeam, mate} = plan;
+  if(mateTeam){
+    targetTeam.memberIds = targetTeam.memberIds.concat(mateTeam.memberIds);
+    if(keep === "mate"){
+      targetTeam.title = mateTeam.title;
+      targetTeam.document = mateTeam.document;
+    } else if(keep !== "target"){
+      if(!targetTeam.title && mateTeam.title) targetTeam.title = mateTeam.title;
+      if(!targetTeam.document && mateTeam.document) targetTeam.document = mateTeam.document;
+    }
+    delete STATE.teams[mateTeam.id];
+  } else {
+    targetTeam.memberIds.push(mate.id);
+  }
+  await saveState();
+}
+
+/* shared prompt used wherever a merge might overwrite an existing title/doc —
+   returns "target", "mate", or null if the admin cancelled */
+function chooseTeamMergeContent(plan){
+  const targetDesc = `This team: "${plan.targetTeam.title || '(no title)'}"${plan.targetTeam.document ? ' + a file already uploaded' : ' (no file)'}`;
+  const mateDesc = `${plan.mate.name}'s team: "${plan.mateTeam.title || '(no title)'}"${plan.mateTeam.document ? ' + a file already uploaded' : ' (no file)'}`;
+  const choice = window.prompt(`Both teams already have a presentation title and/or file. Type 1 to keep this team's, or 2 to keep ${plan.mate.name}'s — merging can't keep both:\n\n1) ${targetDesc}\n2) ${mateDesc}`, "1");
+  if(choice === null) return null;
+  return choice.trim() === "2" ? "mate" : "target";
+}
+
+async function removeMemberFromTeam(teamId, participantId){
   const team = (STATE.teams||{})[teamId];
   if(!team) return;
-  const newTitle = window.prompt("Presentation title for this team:", team.title || "");
-  if(newTitle === null) return;
-  team.title = newTitle.trim();
+  if(team.memberIds.length <= 1){
+    toast("A team needs at least one member — delete the participant instead if you need to remove them entirely");
+    return;
+  }
+  team.memberIds = team.memberIds.filter(id=>id!==participantId);
   await saveState();
-  toast("Presentation title updated");
+  toast("Member removed from the team");
+  renderEditTeamMembersList(teamId);
   renderAdmin();
+}
+
+let currentEditTeamId = null;
+function openEditTeamModal(teamId){
+  const team = (STATE.teams||{})[teamId];
+  if(!team) return;
+  currentEditTeamId = teamId;
+  document.getElementById("editTeamIdLabel").textContent = teamId;
+  document.getElementById("editTeamMembersLabel").textContent = `Team members (max ${TEAM_EVENT_MAX_MEMBERS})`;
+  document.getElementById("editTeamTitleInput").value = team.title || "";
+  document.getElementById("editTeamAddMemberInput").value = "";
+  renderEditTeamMembersList(teamId);
+  document.getElementById("editTeamModal").classList.add("show");
+}
+function renderEditTeamMembersList(teamId){
+  const team = (STATE.teams||{})[teamId];
+  const wrap = document.getElementById("editTeamMembersList");
+  if(!team || !wrap) return;
+  wrap.innerHTML = team.memberIds.map(id=>{
+    const m = STATE.participants[id];
+    return `
+      <span class="scan-team-chip" style="display:inline-flex; align-items:center; gap:6px; margin:0 6px 6px 0;">
+        ${m ? m.name : id} <span class="pid" style="margin-left:2px;">${id}</span>
+        <button type="button" class="mini-x" data-remove-team-member="${id}" title="Remove" ${team.memberIds.length<=1 ? 'disabled' : ''}>&times;</button>
+      </span>
+    `;
+  }).join("");
+  wrap.querySelectorAll("[data-remove-team-member]").forEach(btn=>{
+    btn.addEventListener("click", ()=>removeMemberFromTeam(teamId, btn.dataset.removeTeamMember));
+  });
 }
 
 /* ID-like value that may be a single ID or several joined with newlines —
@@ -3455,14 +3632,31 @@ function renderEventParticipantLists(eventId, filter, teamFilter){
     .sort((a,b)=> new Date(b.registeredAt) - new Date(a.registeredAt)));
   const checkedIn = all.filter(p=>p.checkins[eventId]);
 
+  const wireToggleButtons = (wrapEl)=>{
+    wrapEl.querySelectorAll("[data-toggle-checkin]").forEach(btn=>{
+      btn.addEventListener("click", ()=>toggleCheckin(btn.dataset.toggleCheckin, btn.dataset.toggleEvent));
+    });
+  };
+  const wireTeamRowButtons = (wrapEl)=>{
+    wrapEl.querySelectorAll("[data-edit-participant]").forEach(btn=>{
+      btn.addEventListener("click", ()=>openEditParticipantModal(btn.dataset.editParticipant));
+    });
+    wrapEl.querySelectorAll("[data-edit-team]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const val = btn.dataset.editTeam;
+        const team = (STATE.teams||{})[val] ? STATE.teams[val] : getOrCreateColloquiumTeam(val);
+        openEditTeamModal(team.id);
+      });
+    });
+    wireToggleButtons(wrapEl);
+  };
+
   if(all.length===0){
     allWrap.innerHTML = '<p class="announce-empty">No one has registered for this event yet.</p>';
   } else {
     allWrap.innerHTML = participantsMiniTableHTML(all, eventId, true, showDocs);
+    wireToggleButtons(allWrap);
   }
-  allWrap.querySelectorAll("[data-quick-checkin]").forEach(btn=>{
-    btn.addEventListener("click", ()=>checkInParticipant(btn.dataset.quickCheckin, eventId));
-  });
 
   if(checkedIn.length===0){
     checkedWrap.innerHTML = '<p class="announce-empty">No one checked in yet.</p>';
@@ -3480,24 +3674,28 @@ function renderEventParticipantLists(eventId, filter, teamFilter){
     });
     checkedWrap.innerHTML = blocks.map(b=>`
       <div class="team-block">
-        <div class="team-block-members">${b.members.map(m=>`<span class="event-chip checked">${m.name} <span class="pid" style="margin-left:4px;">${m.id}</span></span>`).join("")}</div>
+        <div class="team-block-members">
+          ${b.members.map(m=>`
+            <span class="event-chip checked" style="display:inline-flex; align-items:center; gap:6px;">
+              ${m.name} <span class="pid" style="margin-left:4px;">${m.id}</span>
+              <button type="button" class="qr-btn-mini" data-toggle-checkin="${m.id}" data-toggle-event="${eventId}" style="padding:1px 6px; font-size:10px;">Undo</button>
+            </span>
+          `).join("")}
+        </div>
         ${showDocs ? `<div style="margin-top:6px;">${b.team ? participantDocCellHTMLForTeam(b.team) : '<span class="doc-missing">Not uploaded</span>'}</div>` : ``}
       </div>
     `).join("");
+    wireToggleButtons(checkedWrap);
   } else {
-    checkedWrap.innerHTML = participantsMiniTableHTML(checkedIn, eventId, false, showDocs);
+    checkedWrap.innerHTML = participantsMiniTableHTML(checkedIn, eventId, true, showDocs);
+    wireToggleButtons(checkedWrap);
   }
 
   if(eventId === "colloquium"){
     const teamsWrap = document.getElementById("eventTeamsTableWrap");
     if(teamsWrap){
       teamsWrap.innerHTML = colloquiumTeamsTableHTML(teamFilter);
-      teamsWrap.querySelectorAll("[data-edit-participant]").forEach(btn=>{
-        btn.addEventListener("click", ()=>openEditParticipantModal(btn.dataset.editParticipant));
-      });
-      teamsWrap.querySelectorAll("[data-edit-team-title]").forEach(btn=>{
-        btn.addEventListener("click", ()=>editTeamTitle(btn.dataset.editTeamTitle));
-      });
+      wireTeamRowButtons(teamsWrap);
     }
   }
 }
